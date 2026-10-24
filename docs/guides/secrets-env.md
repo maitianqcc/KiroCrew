@@ -40,6 +40,39 @@ At spawn the gateway resolves `secret://MY_MCP_SECRET` from the vault.  If the
 named secret does not exist, the server fails to start rather than launching
 with a missing credential.
 
+### Logins and notes
+
+A vault entry can also be a **login** (username, password, an optional one-time
+password seed, the sites it belongs to) or a **note**. Store one with the typed
+body of `POST /api/secrets`:
+
+```jsonc
+{
+  "name": "GITHUB",
+  "type": "login",
+  "fields": {
+    "username": "octocat",
+    "password": "…",
+    "totp": "otpauth://totp/GitHub:octocat?secret=…",
+    "urls": [{ "href": "https://github.com", "match": "domain" }]
+  }
+}
+```
+
+Pick a field with `#`:
+
+| Reference | Resolves to |
+|---|---|
+| `secret://GITHUB` | the password (a login's default field) |
+| `secret://GITHUB#username` | the username |
+| `secret://GITHUB#totp` | the one-time code valid right now, never the seed |
+| `secret://GITHUB#url` | the first stored URL |
+| `secret://MY_NOTE` | a note's text |
+
+A field the item does not have fails the spawn, the same way a missing name
+does. Plain secrets are unchanged: `secret://NAME` on one still means its value,
+and a name may not contain `#`.
+
 ### Route the server through the gateway
 
 The gateway is the only place a reference is resolved, so **route the server

@@ -1102,14 +1102,58 @@ gateway and offers no tools. Out of scope: an app-registered
 server (whether an app may name a vault secret is a separate decision) and a
 hand-written agent file that Kiro Crew does not rebuild.
 
+**Typed items (`secrets/items.py`).** An entry is one ciphertext under one
+name; `items.py` decides what the PLAINTEXT inside it looks like. Three types:
+`secret` (the plaintext IS the value, no wrapper -- every entry stored before
+types existed is this type byte for byte, so nothing migrates), `login`
+(`username`, `password`, optional `totp` as an `otpauth://` URI or bare base32
+seed, `urls` each with a `match` mode in `domain | host | exact | never`, and
+`notes`, as one canonical JSON object) and `note` (`text`). The type sits in
+the entry in the clear (`type`, with `updated_at`) so a listing can group
+without decrypting, and it is bound into the AES-GCM AAD
+(`v1 + scope + NUL + name + NUL + type`; a `secret` keeps the original
+name-only AAD), so relabelling an entry's type in the store makes it fail to
+decrypt instead of being read as another type. A login's URL and username are
+INSIDE the ciphertext, not in the plaintext index, because a store that leaked
+would otherwise say which sites a person has an account on. Bounds: a field is
+at most `MAX_FIELD_CHARS`, a login carries at most `MAX_LOGIN_URLS`; every
+value is kept as given (only the emptiness check strips). `url_matches` defines
+what a stored `match` mode permits (`domain` = the stored host and its
+subdomains; no public-suffix list is consulted, so a stored `co.uk` would be
+too wide and is the user's to avoid), for the fill path that consumes it. The
+TOTP code is computed in the gateway (RFC 6238; SHA1/SHA256/SHA512, 6-10
+digits), never handed out as the seed.
+
+A reference is `secret://NAME` or `secret://NAME#FIELD` (`items.parse_reference`
+splits on the FIRST `#`; a stored name may therefore not contain `#`, and the
+dashboard write refuses one). With no field the reference means the type's
+DEFAULT field (`password` for a login, `text` for a note, the value for a
+secret), and `SecretVault.get` / `get_many` / `get_with_revision` answer that
+same default, so every consumer written for a plain secret keeps working when
+the entry under that name becomes a login. `#totp` resolves to the CURRENT
+code. An unknown field, or `#totp` on a login without a seed, fails closed with
+an `ItemError` whose `code` is stable (`unknown_field`, `no_totp`); the
+resolver's message names only the env-var key and that code, never the name or
+a value. The whole item is `get_item` / `get_items_many`; the write is
+`set_item_with_revision`, which validates through `items.validate_item` before
+touching the store and writes a `secret` item as exactly the entry
+`set_with_revision` writes.
+
 Security properties:
 
-- **Write-only surface.** The vault is stored (`POST /api/secrets`), listed by
-  name (`GET /api/secrets` — names only, values never returned) and deleted
+- **Write-only surface.** The vault is stored (`POST /api/secrets`, a plain
+  `{"name","value"}` or a typed `{"name","type","fields"}`), listed
+  (`GET /api/secrets` -- `names`, plus `items` with each entry's `type`,
+  `revision`, `updated_at` and a login's `fields` = `items.public_view`:
+  username, URLs, `has_totp`; never a password, seed, note text or secret
+  value) and deleted
   (`DELETE /api/secrets/{name}`) from the dashboard **Settings → Secrets** tab,
   all behind `_owner_only`. There is deliberately **no** read-back path, on the
-  CLI or the API — a stored value cannot be retrieved, only replaced or
+  CLI or the API — a stored credential cannot be retrieved, only replaced or
   deleted, so a prompt-injected agent has no oracle to exfiltrate it through.
+  The public fields of a login are decrypted on the gateway for that listing;
+  they are the part of the item a password manager shows in its list and are
+  not credentials.
   A store answers with the stored entry's `revision`, a short digest of its
   ciphertext under a fresh nonce that says nothing about the value, and
   `DELETE /api/secrets/{name}?if_revision=` deletes only while the entry still
