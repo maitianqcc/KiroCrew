@@ -746,7 +746,13 @@ def _url_payload_command(n: int) -> str:
 #: (``/owa/?ItemID=<id>&exvsurl=1&...``) in ``redaction_entropy``, its use by
 #: the exfil gate and its five names in the ``redaction`` facade manifest, so
 #: Graph's own message and event links are not masked or blocked. Re-measured.
-_PACKAGE_LINE_BUDGET = 35_227
+#: Raised by 383, from 35,227, for ``mcp_body_fields``: the owner's list of
+#: third-party MCP message-body fields, judged by the document detectors (the full
+#: credential test, with the code-text pass's ``data:`` payload exemption and pass
+#: 3's document-link spans on the entropy guess) under the 256 KiB source-body ceiling, the size refusal's Settings
+#: link, plus its keystone leaf in ``paths_lists``. Nothing is relaxed for any other
+#: field; every non-body argument keeps the full scan. Re-measured.
+_PACKAGE_LINE_BUDGET = 35_610
 
 #: Ceiling on any ONE file in the package. This is what the bound is really for --
 #: a package total says nothing about a single file growing back into a second
