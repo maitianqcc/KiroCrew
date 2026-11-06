@@ -23,6 +23,13 @@
       "configKey": "auto_update"
     },
     {
+      "id": "advanced.all-settings",
+      "label": "All settings",
+      "tab": "advanced",
+      "route": "/settings/advanced?highlight=advanced.all-settings",
+      "description": "Each change is checked before it saves, and you can undo it. Change a setting here, or follow its link to the page where it lives. A read-only row says why."
+    },
+    {
       "id": "agent.kiro-sign-in",
       "label": "Sign out or switch Kiro account",
       "tab": "agent",
