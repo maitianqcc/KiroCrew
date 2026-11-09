@@ -746,7 +746,84 @@ def _url_payload_command(n: int) -> str:
 #: (``/owa/?ItemID=<id>&exvsurl=1&...``) in ``redaction_entropy``, its use by
 #: the exfil gate and its five names in the ``redaction`` facade manifest, so
 #: Graph's own message and event links are not masked or blocked. Re-measured.
-_PACKAGE_LINE_BUDGET = 35_227
+#: Raised by 559, from 35,160, for the ``sandbox-escape-git-tar-self`` floor: the new
+#: ``argv_floor_git_tar`` module (the git/tar self-target predicate), its catalog row,
+#: note, facade manifest, package exports and gate-loop wiring, the value-scoped
+#: exec/override checks, the git option-value table, and the literal-self-only
+#: (``dns=False``) remote host check; its wrapper/command-split walk reuses
+#: ``argv_rules``'s ``_split_commands``/``_program_args``. Re-measured.
+#: Raised by 19, from 35,814, for the same floor reading a quoted or globbed git/tar
+#: verb (``gi''t``, ``g*t``) the way the ssh floor reads ``ss''h``: the quick gate
+#: reuses the self floor's machinery/quote classes and the verb match reuses
+#: ``_glob_could_expand_to``; plus the literal-self-only rule/note wording. Re-measured.
+#: Dropped by 107, from 35,833, after the git/tar self-target floor replaced its
+#: subcommand option-value grammar with token candidates and removed tar's
+#: ``--force-local`` exemption. Re-measured.
+#: Raised by 60, from 35,726, for the same floor stepping over a redirection before
+#: the git verb, keeping quoted separators masked until a value is inspected, and
+#: refusing a ``url.<base>.insteadOf``/``pushInsteadOf`` rewrite whose base or value
+#: is this host (``-c``, ``--config-env`` and ``GIT_CONFIG_KEY_<n>``). Re-measured.
+#: Raised by 88, from 35,786, for the same floor reading its command values
+#: (``GIT_SSH_COMMAND``, ``core.sshCommand``, ``ext::``, ``--upload-pack``, tar
+#: ``--rsh-command``) literally with no DNS before the ssh floor's dial check, and
+#: reading a git/tar remote host as typed (no glob expansion); plus the facade
+#: manifest names and the rule/note wording. Re-measured.
+#: Raised by 74, from 35,874, for the git/tar floor reading the ssh floor's own front
+#: end: the ssh floor's source pre-walk extracted into ``_ssh_floor_source_text`` and
+#: its per-frame ``RSYNC_RSH`` environment tracking into ``_FrameEnvironment`` (both
+#: called by ``_is_ssh_to_self`` and ``_is_git_tar_to_self``), less the git/tar
+#: floor's own partial pre-walk and prefix-only ``_env_assignments``. Re-measured.
+#: Raised by 86, from 36,039, for the git/tar floor: scoping the config remote check to
+#: a transport-URL key so an http-proxy ``host:port`` value is not refused, percent-
+#: decoding a URL authority and scp host before the literal self check, splitting a
+#: nested payload on the separators real at its own level (re-running the ssh floor's
+#: source pre-walk per frame), an ``--attr-source`` value-option table entry, and the
+#: facade manifest names. Re-measured.
+#: Re-pinned from 36,125 after git config options were routed through one
+#: key-aware classifier and remote candidates were limited to transport and
+#: executable override values. Re-measured.
+#: Raised by 17, from 36,113, for the git/tar floor stepping over shell
+#: redirections before resolving a wrapped program. It reuses the shared
+#: quote-aware command reader; operand matching is unchanged. Re-measured.
+#: Raised by 22, from 36,130, for GNU tar's ``TAR_OPTIONS`` effective argv and
+#: ``TAPE`` default archive to share the frame environment already used by git.
+#: The tar operand and command-value predicates stay unchanged. Re-measured.
+#: Lowered by 3, from 36,152, for dropping the tar ``explicit_archive`` shortcut
+#: so the ``TAPE`` default archive is always a candidate and the narrow host:file
+#: predicate decides. Re-measured.
+#: Raised by 4, from 36,149, for preserving shell-resolved environment values
+#: and documenting malformed ``TAR_OPTIONS`` fallback through the existing tar
+#: candidate classifier. Re-measured.
+#: Raised by 37, from 36,153, for ``_FrameEnvironment`` keeping every value seen
+#: under a case-folded variable name and both floors checking each one, so a
+#: benign lower-case lookalike cannot hide a self-dialing value. Re-measured.
+#: Raised by 49, from 36,190, for the git/tar floor decoding
+#: ``GIT_CONFIG_PARAMETERS`` and ``ext::`` values, reading git proxy-command
+#: environment values, and inspecting an invoked shell alias. Re-measured.
+#: Raised by 45, from 36,239, for bracketed scp hosts with optional ports,
+#: decoded ``ext::`` commands passing through both command floors, and invoked
+#: ordinary aliases expanding back into git argv under the existing structural
+#: nesting bound. Re-measured.
+#: Raised by 120, from 36,284, for the git/tar floor re-entering one dispatcher for
+#: every command a git/tar invocation runs: ``deny_gate``'s self-protection floor loop
+#: lifted into ``_self_protection_floor_hit``, the threaded re-entry chain bounded by
+#: ``_FUNCTION_BIND_CAP``, invoked aliases rebuilt into the whole invocation, attached
+#: ``--opt=value`` read like the detached value, and the facade manifest names.
+#: Re-measured.
+#: Raised by 34, from 36,404, for the re-entry reading a carried command with the
+#: operator's enabled-row set and reporting the inner row that refused it
+#: (``deny_gate._FLOOR_READ`` and ``_reentered_floor_hit``). Re-measured.
+#: Raised by 41, from 36,438, for the git/tar floor reading each unquoted ``ext::``
+#: payload only up to the next ``ext::`` payload, so the read is linear, and refusing
+#: a git argv or command value past ``_GIT_TAR_WORD_CAP`` words unread. Re-measured.
+#: Raised by 257, from 36,479, for the git/tar floor reading every source once: the
+#: alias definition git runs (last wins) looked up once per invocation, one memo per
+#: read for literal reads, refusal-free re-entries and ``TAR_OPTIONS`` /
+#: ``GIT_CONFIG_PARAMETERS`` parses, ``--config-env`` and numbered values read once
+#: per name, and the ``_CARRIED_READ_CHAR_BUDGET`` refusal. Re-measured.
+#: Raised by 4, from 36,736, for the tar floor reading every ``TAR_OPTIONS`` word as
+#: data, so a separator word there never ends the argv read. Re-measured.
+_PACKAGE_LINE_BUDGET = 36_740
 
 #: Ceiling on any ONE file in the package. This is what the bound is really for --
 #: a package total says nothing about a single file growing back into a second
