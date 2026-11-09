@@ -15,8 +15,8 @@ reader of a flat command substitution (``_static_substitution_output``) are reus
 the ssh self-target floor above this module.
 ``kiro_crew.security.argv_floor`` serves every name defined here, and a patch through it
 reaches this module (:mod:`kiro_crew._facade_mirror`). This module reads the shell reader,
-the inline-payload checks and the shared name vocabulary below it, and imports no other
-part of the argv floor.
+the inline-payload checks and the shared name vocabulary below it, and of the argv floor
+imports only ``argv_floor_pager``, the ``git grep`` pager read the kill check asks about.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from typing import NamedTuple
 # onto the owning module's namespace, so a name bound into THIS namespace would
 # keep resolving the unpatched object and the instrument would count nothing.
 from . import shell_normalizer as _shell_normalizer
+from .argv_floor_pager import _git_grep_pager_commands
 from .inline_payload import (
     _INLINE_DYNAMIC_EXEC_RE,
     _decoded_b64_literal_sources,
@@ -710,7 +711,7 @@ def _bare_kill_raw_bodies(source: str) -> "list[str]":
     return bodies
 
 
-def _is_self_kill(text_lower: str) -> bool:
+def _is_self_kill(text_lower: str, *, raw_text: "str | None" = None) -> bool:
     """True if *text_lower* terminates a Kiro Crew process.
 
     Two shapes, matched separately because the two kill families take different
@@ -732,6 +733,20 @@ def _is_self_kill(text_lower: str) -> bool:
     # holds, so a miss skips both descents.
     if not _self_floor_can_fire(text_lower):
         return False
+    # A ``git grep`` pager is a command no argv position shows. git parses its
+    # options with case, so they are read from the command AS SUBMITTED; a pager
+    # string is a substring of one word, so strictly shorter and the recursion ends.
+    # The walk keeps that case, so it matches a wrapping shell's name in any case
+    # (``BASH -c``) here only; every other floor walks lower-cased text.
+    submitted = raw_text if raw_text is not None else text_lower
+    checked: "set[str]" = set()
+    for source, _tokens in _shell_payload_walk(submitted, fold_shell_names=True):
+        for command in _git_grep_pager_commands(source):
+            if command in checked:
+                continue
+            checked.add(command)
+            if _is_self_kill(command.lower(), raw_text=command):
+                return True
     for tokens in _self_token_frames(text_lower):
         programs = _argv_programs(tokens)
         # Once per FRAME, not once per trigger token: see ``_is_credential_mint``.
