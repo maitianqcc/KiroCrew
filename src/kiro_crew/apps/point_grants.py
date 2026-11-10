@@ -21,7 +21,8 @@ registry is complete once it is imported.
 
 ``register_permission_grants(families, entries)``
     The same, for a grant a manifest declares in ``permissions`` rather than in
-    ``contributes`` (``permissions.workerAutoApprove``): ``entries`` maps the
+    ``contributes`` (``permissions.workerAutoApprove``,
+    ``permissions.reachableByUserSessions``): ``entries`` maps the
     manifest's ``permissions`` (parsed or a raw dict). Its families are staged and
     approved exactly like a point's, and :func:`point_grant_families` lists them too.
 """
@@ -140,6 +141,13 @@ from kiro_crew.apps.worker_auto_approve import (  # noqa: E402
 )
 
 register_permission_grants(WORKER_AUTO_APPROVE_GRANT_FAMILIES, worker_auto_approve_grant_entries)
+
+from kiro_crew.apps.user_session_reach import (  # noqa: E402
+    USER_SESSION_REACH_GRANT_FAMILIES,
+    user_session_reach_grant_entries,
+)
+
+register_permission_grants(USER_SESSION_REACH_GRANT_FAMILIES, user_session_reach_grant_entries)
 
 
 __all__ = [

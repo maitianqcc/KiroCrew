@@ -350,6 +350,9 @@ if TYPE_CHECKING:  # names it serves from outside the family, from their homes
     from kiro_crew.apps.selection_action_grants import (  # noqa: F401
         selection_action_grant_row,
     )
+    from kiro_crew.apps.user_session_reach import (  # noqa: F401
+        user_session_reach_grant_row,
+    )
     from kiro_crew.apps.worker_auto_approve import (  # noqa: F401
         WORKER_AUTO_APPROVE_GRANT_FAMILIES,
     )
