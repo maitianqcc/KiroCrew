@@ -327,8 +327,8 @@ async def command_result(
 async def send_command(self: AcpClient, command: str, args: dict | None = None) -> str:
     """Execute a kiro slash command (e.g. '/compact', '/usage', '/effort').
 
-    Returns the response text (if any).  For streaming output use
-    :meth:`stream_command` instead.
+    Returns the response text (if any); raises AcpError on a ``success: false``
+    answer.  For streaming output use :meth:`stream_command` instead.
 
     When *args* is provided (e.g. ``{"level": "high"}`` for ``/effort``),
     the TuiCommand object form ``{command, args}`` is used so kiro-cli
@@ -356,6 +356,9 @@ async def send_command(self: AcpClient, command: str, args: dict | None = None) 
             # tokens/keys in slash-command output.
             raw, _ = redact_exfiltration_urls(raw)
             raw, _ = redact_credentials(raw)
+        if result.get("success") is False:
+            # kiro-cli refuses an /effort level this way, with no JSON-RPC error.
+            raise AcpError(raw or f"{command} refused", command_refused=True)
         return raw
     except AcpTimeoutError:
         logger.debug("Command '%s' response timed out (may still be running)", command)

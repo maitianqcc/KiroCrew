@@ -99,10 +99,14 @@ class AcpError(Exception):
         transient: bool | None = None,
         code: int | None = None,
         user_worded: bool = False,
+        command_refused: bool = False,
     ) -> None:
         super().__init__(*args)
         self.transient = transient
         self.code = code
+        # kiro-cli answered a command (an ``/effort`` level) ``success: false``: a
+        # reset replays the refusal, so a caller keeps the session or answers 4xx.
+        self.command_refused = command_refused
         # Whether Kiro Crew wrote this message for a person to read: a curated
         # formatter branch, or a raise site with fixed recovery wording. False
         # for the formatter's fallback, which passes the provider's own text or

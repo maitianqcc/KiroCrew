@@ -144,7 +144,8 @@ async def send_command(
 ) -> str:
     """Execute a kiro slash command (e.g. '/compact', '/effort').
 
-    Returns the response text (if any). Mirrors AcpClient.send_command.
+    Returns the response text (if any); raises AcpError on a ``success: false``
+    answer. Mirrors AcpClient.send_command.
     """
     if args:
         cmd_name = command.strip().split(None, 1)[0].lstrip("/")
@@ -168,6 +169,9 @@ async def send_command(
         text = str(raw)
         text, _ = redact_exfiltration_urls(text)
         text, _ = redact_credentials(text)
+        if isinstance(result, dict) and result.get("success") is False:
+            # kiro-cli refuses an /effort level this way, with no JSON-RPC error.
+            raise AcpError(text or f"{command} refused", command_refused=True)
         return text
     except AcpTimeoutError:
         return ""
