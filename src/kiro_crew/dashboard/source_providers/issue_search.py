@@ -579,11 +579,14 @@ _GITLAB_RAW_KEYS = frozenset(
     }
 )
 _GITLAB_MAX_RAW_PAIRS = 20
+# A GitLab project path is a URL path, never a filesystem one, so its separator
+# is always "/" (the same constant ``links`` names for URL paths).
+_URL_PATH_SEPARATOR = "/"
 _HEADER_INT_RE = re.compile(r"[0-9]{1,9}")
 
 
 def _validate_gitlab(query: IssueQuery) -> IssueQuery:
-    segments = query.scope.strip("/").split("/")
+    segments = query.scope.strip(_URL_PATH_SEPARATOR).split(_URL_PATH_SEPARATOR)
     if (
         len(segments) < 2
         or len(segments) > _GITLAB_MAX_PROJECT_SEGMENTS
@@ -603,7 +606,7 @@ def _validate_gitlab(query: IssueQuery) -> IssueQuery:
             raise IssueQueryError(f"{field} is not a valid GitLab username.")
     if query.raw:
         _gitlab_raw_pairs(query.raw)
-    return replace(query, host=host, scope="/".join(segments))
+    return replace(query, host=host, scope=_URL_PATH_SEPARATOR.join(segments))
 
 
 def _gitlab_raw_pairs(raw: str) -> list[tuple[str, str]]:

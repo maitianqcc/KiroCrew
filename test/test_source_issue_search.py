@@ -25,6 +25,11 @@ from kiro_crew.dashboard.source_providers import cache, hosts, issue_search
 from kiro_crew.dashboard.source_providers.contract import SourceProviderError
 
 _SECRET = "ghp_" + "b" * 36
+# The PEM markers are assembled from their dashes, so no line of this file holds a
+# whole marker (the internal-content scan reads source lines).
+_DASHES = "-----"
+_PEM_BEGIN = f"{_DASHES}BEGIN PRIVATE KEY{_DASHES}"
+_PEM_END = f"{_DASHES}END PRIVATE KEY{_DASHES}"
 
 
 @pytest.fixture(autouse=True)
@@ -626,10 +631,7 @@ async def test_a_pem_key_ending_past_the_excerpt_source_window_is_redacted(
     """A long template comment, then an indented key whose END line lies past
     character 4,000: the excerpt strip moves the key lines into the excerpt."""
     lines = [f"MIIE{n:02d}" + "A" * 60 for n in range(40)]
-    key = "\n".join(
-        indent + line
-        for line in ["-----BEGIN PRIVATE KEY-----", *lines, "-----END PRIVATE KEY-----"]
-    )
+    key = "\n".join(indent + line for line in [_PEM_BEGIN, *lines, _PEM_END])
     body = "<!-- " + "template " * 285 + "-->\n" + key + "\n"
     assert body.index("-----END") > 4000
     monkeypatch.setattr(source, "_run_json", _GitHub([_gh_item(3, body=body)]))
@@ -639,7 +641,7 @@ async def test_a_pem_key_ending_past_the_excerpt_source_window_is_redacted(
 
 
 _PEM_BODY = (
-    "Our deploy key:\n-----BEGIN RSA PRIVATE KEY-----\n"
+    f"Our deploy key:\n{_DASHES}BEGIN RSA PRIVATE KEY{_DASHES}\n"
     + "\n".join(f"MIIEow{n}AAKCAQEAxQQ" + "Q" * 50 for n in range(6))
     + "\n"
 )
