@@ -17,7 +17,10 @@ import asyncio
 import functools
 import logging
 import os
+from concurrent.futures import Executor
+from contextvars import copy_context
 from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, TypeVar
 
 import aiohttp
 
@@ -33,6 +36,17 @@ from kiro_crew.platform_compat import acquire_lock, release_lock
 
 logger = logging.getLogger(__name__)
 
+_T = TypeVar("_T")
+
+
+async def run_blocking(executor: Executor | None, func: Callable[..., _T], /, *args: Any) -> _T:
+    """``func(*args)`` on *executor* with the caller's context; ``None`` is ``asyncio.to_thread``."""
+    if executor is None:
+        return await asyncio.to_thread(func, *args)
+    call = functools.partial(copy_context().run, func, *args)
+    return await asyncio.get_running_loop().run_in_executor(executor, call)
+
+
 # Per-identity in-process locks, so concurrent coroutines in THIS process serialize
 # on the asyncio lock (cooperative, no event-loop block) before contending the
 # cross-process flock. LoopBoundLock (not a bare module-global asyncio.Lock, which
@@ -43,12 +57,12 @@ _locks_guard = LoopBoundLock()
 
 
 def _acquire_flock(fd: int) -> None:
-    """Blocking cross-process lock acquire — call only via asyncio.to_thread."""
+    """Blocking cross-process lock acquire — call only in a worker, via run_blocking."""
     acquire_lock(fd, exclusive=True)
 
 
 def _release_flock(fd: int) -> None:
-    """Cross-process lock release — call only via asyncio.to_thread."""
+    """Cross-process lock release — call only in a worker, via run_blocking."""
     release_lock(fd)
 
 
@@ -124,6 +138,7 @@ async def ensure_fresh(
     *,
     session: aiohttp.ClientSession,
     rejected_access_token: str | None = None,
+    executor: Executor | None = None,
 ) -> KasToken:
     """Return a token satisfying the KAS refresh margin, refreshing under lock if needed.
 
@@ -134,6 +149,8 @@ async def ensure_fresh(
     *rejected_access_token* is an access token a service refused before its expiry. It
     forces a refresh only while the stored token is still that one. A stored token that
     differs is treated as usual: a peer already replaced the refused one.
+
+    *executor* runs the store reads, the lock and the save; ``None`` is the default one.
     """
 
     def _keep(stored: KasToken) -> bool:
@@ -148,14 +165,14 @@ async def ensure_fresh(
     #  1. a per-identity asyncio.Lock cooperatively serializes coroutines in THIS
     #     process, so same-process callers await rather than racing the flock;
     #  2. the cross-process flock — whose acquire blocks on ANOTHER process's HTTP
-    #     refresh — is taken and released in a worker thread via asyncio.to_thread,
+    #     refresh — is taken and released in a worker thread via run_blocking,
     #     so a peer process holding it parks the thread, not the loop.
     identity_lock = await _identity_lock(token.identity)
     async with identity_lock:
         # Re-check after awaiting the in-process lock: a sibling coroutine may have
         # refreshed while we waited, making both the flock and the HTTP call moot.
         # Vault reads do file IO (plus owner-only key checks) — off-loop.
-        current = await asyncio.to_thread(store.load, token.identity)
+        current = await run_blocking(executor, store.load, token.identity)
         if current is not None and _keep(current):
             return current
 
@@ -169,16 +186,16 @@ async def ensure_fresh(
 
             return open_create_or_existing(str(lock_path), os.O_RDWR, 0o600)
 
-        fd = await asyncio.to_thread(_open_refresh_lock)
+        fd = await run_blocking(executor, _open_refresh_lock)
         try:
             # Blocking flock acquire runs off-loop.
-            await asyncio.to_thread(_acquire_flock, fd)
+            await run_blocking(executor, _acquire_flock, fd)
             try:
                 # Re-read inside the cross-process lock: a peer process may have
                 # refreshed while we waited on the flock -- or a logout may have
                 # deleted the identity, in which case the token in hand is the
                 # one the user just removed and must not come back.
-                current = await asyncio.to_thread(store.load, token.identity)
+                current = await run_blocking(executor, store.load, token.identity)
                 if current is None:
                     raise IdentitySignedOut(f"identity {token.identity} was signed out")
                 if _keep(current):
@@ -191,21 +208,21 @@ async def ensure_fresh(
                     # sign-in that replaces that token (save clears it in the
                     # same lock). Recorded, then re-raised unchanged: callers see
                     # the same failure they always did.
-                    await asyncio.to_thread(
-                        store.mark_refresh_rejected, token.identity, current.refresh_token
+                    await run_blocking(
+                        executor, store.mark_refresh_rejected, token.identity, current.refresh_token
                     )
                     raise
                 # store.save does blocking file IO (owner-only lockdown included) — off-loop.
                 # This coroutine already holds the identity's refresh lock on `fd`;
                 # a second acquire on another descriptor would deadlock against it.
-                await asyncio.to_thread(
-                    functools.partial(store.save, refreshed, hold_refresh_lock=False)
+                await run_blocking(
+                    executor, functools.partial(store.save, refreshed, hold_refresh_lock=False)
                 )
                 return refreshed
             finally:
-                await asyncio.to_thread(_release_flock, fd)
+                await run_blocking(executor, _release_flock, fd)
         finally:
-            await asyncio.to_thread(os.close, fd)
+            await run_blocking(executor, os.close, fd)
 
 
 async def _refresh(token: KasToken, *, session: aiohttp.ClientSession) -> KasToken:

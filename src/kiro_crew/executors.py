@@ -30,6 +30,10 @@ kind.  The main pools:
 * :func:`local_auth_executor` -- the local-owner process check, for
   ``/api/token/local`` and the relay viewer token route, so a full default
   executor cannot hold that check for minutes.
+* :func:`relay_viewer_executor` -- the relay viewer routes' settings, credential
+  and sign-in reads, so the desktop app's Crew token mint does not wait behind
+  unrelated work. Not the owner-check pool: a sign-in refresh here can wait on
+  another process's refresh lock, and that must not hold ``/api/token/local``.
 * :func:`image_executor` -- Pillow decode/resize/encode for the MCP gateway's
   tool-result image budget (:mod:`kiro_crew.mcp_gateway.image_budget`):
   seconds of CPU per oversized raster, paced by what a brokered server returns.
@@ -71,6 +75,7 @@ __all__ = [
     "cron_queue_depth",
     "discovery_executor",
     "local_auth_executor",
+    "relay_viewer_executor",
     "embed_executor",
     "memory_background_executor",
     "image_executor",
@@ -148,6 +153,10 @@ _MAX_STATIC_ASSET_WORKERS = 4
 # The token mint's local-owner check is one short ``/proc`` peer lookup, run only
 # after the local secret matched, so two threads cover every legitimate caller.
 _MAX_LOCAL_AUTH_WORKERS = 2
+
+# The relay viewer's reads are short file reads, except a sign-in refresh, which can
+# hold one worker on the cross-process refresh lock; four leave room for the rest.
+_MAX_RELAY_VIEWER_WORKERS = 4
 
 # Memory filesystem work and explicit embedding requests stay off the default
 # executor used by DNS. Prompt construction shares this pool but never embeds.
@@ -365,6 +374,7 @@ _cron_pool: ThreadPoolExecutor | None = None
 _discovery_pool: ThreadPoolExecutor | None = None
 _static_asset_pool: ThreadPoolExecutor | None = None
 _local_auth_pool: ThreadPoolExecutor | None = None
+_relay_viewer_pool: ThreadPoolExecutor | None = None
 _embed_pool: ThreadPoolExecutor | None = None
 _memory_background_pool: ThreadPoolExecutor | None = None
 _recall_pool: ThreadPoolExecutor | None = None
@@ -572,6 +582,24 @@ def local_auth_executor() -> ThreadPoolExecutor:
                 )
                 atexit.register(shutdown_maintenance_executor)
     return _local_auth_pool
+
+
+def relay_viewer_executor() -> ThreadPoolExecutor:
+    """Return the pool for the relay viewer routes' blocking reads, creating it on first use.
+
+    Threads are named ``mc-relayview``. Kept off the default executor so the
+    Crew token mint's settings, credential and sign-in reads do not queue there.
+    """
+    global _relay_viewer_pool
+    if _relay_viewer_pool is None:
+        with _lock:
+            if _relay_viewer_pool is None:
+                _relay_viewer_pool = ThreadPoolExecutor(
+                    max_workers=_MAX_RELAY_VIEWER_WORKERS,
+                    thread_name_prefix="mc-relayview",
+                )
+                atexit.register(shutdown_maintenance_executor)
+    return _relay_viewer_pool
 
 
 def image_executor() -> ThreadPoolExecutor:
@@ -1472,7 +1500,7 @@ def shutdown_maintenance_executor() -> None:
     """
     global _pool, _subprocess_pool, _cron_pool, _discovery_pool, _embed_pool, _recall_pool
     global _memory_background_pool
-    global _static_asset_pool, _local_auth_pool
+    global _static_asset_pool, _local_auth_pool, _relay_viewer_pool
     global _governance_pool, _image_pool, _cron_gate_pool, _tool_gate_pool, _stt_pool
     global _path_resolve_pool
     global _path_probe_pool, _path_transfer_pool
@@ -1486,6 +1514,7 @@ def shutdown_maintenance_executor() -> None:
         discovery_pool, _discovery_pool = _discovery_pool, None
         static_asset_pool, _static_asset_pool = _static_asset_pool, None
         local_auth_pool, _local_auth_pool = _local_auth_pool, None
+        relay_viewer_pool, _relay_viewer_pool = _relay_viewer_pool, None
         embed_pool, _embed_pool = _embed_pool, None
         memory_background_pool, _memory_background_pool = _memory_background_pool, None
         recall_pool, _recall_pool = _recall_pool, None
@@ -1515,6 +1544,8 @@ def shutdown_maintenance_executor() -> None:
         static_asset_pool.shutdown(wait=False, cancel_futures=True)
     if local_auth_pool is not None:
         local_auth_pool.shutdown(wait=False, cancel_futures=True)
+    if relay_viewer_pool is not None:
+        relay_viewer_pool.shutdown(wait=False, cancel_futures=True)
     if embed_pool is not None:
         embed_pool.shutdown(wait=False, cancel_futures=True)
     if memory_background_pool is not None:
