@@ -69,6 +69,7 @@ from kiro_crew.messaging.link import (
     seed_generation,
 )
 from kiro_crew.messaging.queue_drain import entries_queued_by, owner_token
+from kiro_crew.messaging.turn_bracket import arm_cancelled_turn
 from kiro_crew.messaging.upload_gate import uploads_restricted
 from kiro_crew.mirror_admission import sign_mirror_admission
 from kiro_crew.safety_override import safety_override
@@ -811,6 +812,7 @@ class WeComDispatcher:
             logger.warning("WeCom /stop: cancel failed for %s", session_key, exc_info=True)
             await self.client.say(inbound, _STOP_FAILED_TEXT)
             return
+        arm_cancelled_turn(self.sessions, session_key)
         await self.client.say(inbound, _STOPPED_TEXT)
 
     async def _handle_compact(self, inbound: "WeComInbound") -> None:

@@ -126,6 +126,7 @@ from kiro_crew.messaging.queue_drain import (
     tag_entry,
 )
 from kiro_crew.messaging.queue_receipt import ReceiptQueue, ReceiptSurface, receipt_address_key
+from kiro_crew.messaging.turn_bracket import arm_cancelled_turn
 from kiro_crew.mirror_admission import sign_mirror_admission
 from kiro_crew.safety_override import describe_grant_lifetime, safety_override
 from kiro_crew.sel import sel
@@ -1096,6 +1097,7 @@ class WebexDispatcher:
                 try:
                     await provider.cancel(wait_ack_timeout=0)
                     cancelled_turn = True
+                    arm_cancelled_turn(self.sessions, session_key)
                 except Exception:
                     logger.warning("Webex /stop: cancel failed for %s", session_key, exc_info=True)
         async with self._queue.lock:

@@ -83,6 +83,7 @@ from kiro_crew.messaging.link import (
 )
 from kiro_crew.messaging.pre_turn import resolve_pre_turn
 from kiro_crew.messaging.queue_drain import entries_queued_by, owner_token
+from kiro_crew.messaging.turn_bracket import arm_cancelled_turn
 from kiro_crew.messaging.upload_gate import uploads_restricted
 from kiro_crew.safety_override import safety_override
 from kiro_crew.session_lifecycle import (
@@ -542,6 +543,7 @@ class FeishuDispatcher:
                     if outcome in ("acked", "timeout"):
                         # timeout: the cancel WAS written, its ack has not landed.
                         ack = _STOPPING
+                        arm_cancelled_turn(self.sessions, session_key)
                     elif outcome == "no_turn":
                         # The turn finished between is_busy and the cancel.
                         ack = _NOTHING_RUNNING

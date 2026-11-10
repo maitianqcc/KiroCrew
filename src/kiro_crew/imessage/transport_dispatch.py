@@ -58,6 +58,7 @@ from kiro_crew.messaging.inbound_spool import InboundRoute
 from kiro_crew.messaging.link import build_dm_session_key, seed_generation
 from kiro_crew.messaging.pre_turn import resolve_pre_turn
 from kiro_crew.messaging.queue_drain import entries_queued_by, owner_token
+from kiro_crew.messaging.turn_bracket import arm_cancelled_turn
 from kiro_crew.safety_override import safety_override
 from kiro_crew.session_lifecycle import (
     STOP_DECLINED_COMPACTING_TEXT,
@@ -416,6 +417,7 @@ class IMessageDispatcher:
                 else:
                     if outcome in ("acked", "timeout"):
                         ack = _STOPPING
+                        arm_cancelled_turn(self.sessions, session_key)
                     elif outcome == "no_turn":
                         ack = _NOTHING_RUNNING
                     else:

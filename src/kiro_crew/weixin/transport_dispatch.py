@@ -63,6 +63,7 @@ from kiro_crew.messaging.inbound_spool import InboundRoute
 from kiro_crew.messaging.link import build_dm_session_key, seed_generation
 from kiro_crew.messaging.queue_drain import entries_queued_by, owner_token
 from kiro_crew.messaging.transport import InboundMessage
+from kiro_crew.messaging.turn_bracket import arm_cancelled_turn
 from kiro_crew.safety_override import safety_override
 from kiro_crew.session_lifecycle import (
     STOP_DECLINED_COMPACTING_TEXT,
@@ -554,6 +555,7 @@ class WeixinDispatcher:
                         # timeout means the cancel WAS written and the ack has not
                         # landed yet, which is what "正在停止" already describes.
                         ack = _STOPPING
+                        arm_cancelled_turn(self.sessions, session_key)
                     elif outcome == "no_turn":
                         # The provider disagrees with is_busy: the turn finished in
                         # between. Nothing is running, and saying so is accurate.
