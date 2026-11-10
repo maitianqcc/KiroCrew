@@ -14,6 +14,7 @@ boolean shell ``autoAllowReadonly`` does not.
 
 from __future__ import annotations
 
+import json
 import os
 from typing import Any, cast
 
@@ -22,6 +23,7 @@ from kiro_crew.acp.kas_permissions import (
     _SHELL_SETTINGS_KEYS,
     _WRITE_SETTINGS_KEYS,
     CREW_SPEC_DENIES_KEY,
+    shell_denies_carried,
     withhold_answered_under_authored_rules,
 )
 from kiro_crew.platform import allowed_commands, allowed_paths
@@ -171,6 +173,58 @@ def _checkable(tools_settings: Any, keys: tuple[str, ...], field: str, read: Any
             out.append(raw)
     out = list(dict.fromkeys(out))
     return out if len(out) <= _MAX_DENIES else []
+
+
+def uncarried_denied_commands(tools_settings: Any, policy: Any) -> list[str]:
+    """The ``deniedCommands`` entries the gate refuses on its own, or ``[]``.
+
+    Empty when every entry reaches *policy* as a KAS deny rule
+    (``kas_permissions.shell_denies_carried``). Otherwise every entry Crew reads as
+    wide as kiro-cli (``allowed_commands.parse_deny``), so a command one names is
+    refused on every approval policy, not only where KAS asks. An entry Crew cannot
+    read refuses nothing, as on main; the session-start notice names it
+    (``kas_agents.spec_keys_without_carrier``). *tools_settings* has one key per
+    kiro-cli alias group.
+    """
+    if not isinstance(tools_settings, dict) or shell_denies_carried(tools_settings, policy):
+        return []
+    out: list[str] = []
+    for key in _SHELL_SETTINGS_KEYS:
+        settings = tools_settings.get(key)
+        entries = settings.get("deniedCommands") if isinstance(settings, dict) else None
+        for raw in entries if isinstance(entries, list) else ():
+            if isinstance(raw, str) and allowed_commands.parse_deny(raw) is not None:
+                out.append(raw)
+    return list(dict.fromkeys(out))[:_MAX_DENIES]
+
+
+def unread_denied_commands(tools_settings: Any) -> list[str]:
+    """Each ``deniedCommands`` entry :func:`uncarried_denied_commands` does not keep,
+    as ``<key>.deniedCommands: <entry>`` (JSON when not a printable string), for
+    the session-start notice: one Crew cannot read, or a readable one past the
+    :data:`_MAX_DENIES` bound (marked so). A value that is not a list is
+    ``<key>.deniedCommands``."""
+    out: list[str] = []
+    if not isinstance(tools_settings, dict):
+        return out
+    kept: set[str] = set()
+    for key in _SHELL_SETTINGS_KEYS:
+        settings = tools_settings.get(key)
+        if not isinstance(settings, dict) or "deniedCommands" not in settings:
+            continue
+        entries = settings["deniedCommands"]
+        if not isinstance(entries, list):
+            out.append(f"{key}.deniedCommands")
+            continue
+        for raw in entries:
+            shown = raw if isinstance(raw, str) and raw.isprintable() else json.dumps(raw)
+            if not isinstance(raw, str) or allowed_commands.parse_deny(raw) is None:
+                out.append(f"{key}.deniedCommands: {shown}")
+            elif raw not in kept and len(kept) >= _MAX_DENIES:
+                out.append(f"{key}.deniedCommands: {shown} (past the first {_MAX_DENIES})")
+            else:
+                kept.add(raw)
+    return out
 
 
 def _without(tools_settings: Any, keys: tuple[str, ...], field: str) -> Any:
