@@ -123,6 +123,7 @@ def _app(tmp_path) -> web.Application:
     app.router.add_get("/api/members", m.api_members)
     app.router.add_post("/api/members/{slug}/thread", m.api_member_thread)
     app.router.add_post("/api/members/{slug}/fresh-start", m.api_member_fresh_start)
+    app.router.add_get("/api/members/{slug}/rules", m.api_member_rules_get)
     return app
 
 
@@ -206,12 +207,227 @@ async def test_a_non_owner_who_is_not_a_relay_teammate_is_still_refused(tmp_path
     assert json.loads(raw)["code"] == "owner_only"
 
 
+def _slug(name: str) -> str:
+    return members_mod.member_slug(name, _config())
+
+
+async def _call(
+    client: TestClient, method: str, path: str, **kwargs: Any
+) -> tuple[int, dict[str, Any]]:
+    with patch.object(m.KiroCrewConfig, "load", return_value=_config()):
+        resp = await client.request(method, path, **kwargs)
+        body = await resp.json()
+    return resp.status, body
+
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("route", ["thread", "fresh-start"])
-async def test_a_relay_teammates_member_write_is_still_refused(tmp_path, route: str) -> None:
+async def test_a_relay_teammate_opens_a_bots_chat_as_they_open_a_session(
+    tmp_path, monkeypatch
+) -> None:
+    records: list[dict] = []
+    monkeypatch.setattr(
+        m, "_sel", lambda: SimpleNamespace(log_api_access=lambda **kw: records.append(kw))
+    )
+    path = f"/api/members/{_slug(MADE)}/thread"
     async with TestClient(TestServer(_app(tmp_path))) as client:
-        with patch.object(m.KiroCrewConfig, "load", return_value=_config()):
-            resp = await client.post(f"/api/members/{MADE}/{route}", headers=_teammate(client))
-            body = await resp.json()
-    assert resp.status == 403, body
+        status, body = await _call(client, "POST", path, headers=_teammate(client))
+        owner_status, owner_body = await _call(
+            client, "POST", path, params={"token": generate_token(OWNER)}
+        )
+    # Past the gate, the teammate's open runs the owner's own path and ends where it
+    # does (this fixture has no memory store for the Bot, so both stop there).
+    assert status != 403, body
+    assert (status, body.get("code")) == (owner_status, owner_body.get("code"))
+    assert {
+        "caller": f"relay:{ANA}",
+        "operation": "members.thread",
+        "outcome": "allowed",
+        "source": "dashboard",
+        "resources": "relay_teammate",
+    } in records
+
+
+@pytest.mark.asyncio
+async def test_a_relay_teammate_reads_a_bots_rules(tmp_path) -> None:
+    async with TestClient(TestServer(_app(tmp_path))) as client:
+        status, body = await _call(
+            client,
+            "GET",
+            f"/api/members/{_slug(MADE)}/rules",
+            params={"member": MADE},
+            headers=_teammate(client),
+        )
+    assert status == 200, body
+    assert body["rules"] == ""
+
+
+@pytest.mark.asyncio
+async def test_a_relay_teammate_is_refused_a_bot_outside_their_roster(tmp_path) -> None:
+    # The package-synced spec is not on the teammate's roster, so its chat is not theirs.
+    async with TestClient(TestServer(_app(tmp_path))) as client:
+        status, body = await _call(
+            client, "POST", f"/api/members/{_slug(SYNCED)}/thread", headers=_teammate(client)
+        )
+    assert status == 403, body
     assert body["code"] == "owner_only"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("PUT", f"/api/members/{_slug(MADE)}/rules"),
+        ("PUT", f"/api/members/{_slug(MADE)}/goals/schedules"),
+        ("GET", f"/api/members/{_slug(MADE)}/briefing?member={MADE}"),
+        ("DELETE", f"/api/agents/{MADE}"),
+        ("PUT", f"/api/agents/{MADE}"),
+    ],
+)
+async def test_a_relay_teammate_is_still_refused_the_owner_only_bot_routes(
+    tmp_path, method: str, path: str
+) -> None:
+    app = _app(tmp_path)
+    from kiro_crew.dashboard import handlers
+    from kiro_crew.dashboard.handlers import member_goals
+
+    app.router.add_put("/api/members/{slug}/rules", m.api_member_rules_put)
+    app.router.add_put(
+        "/api/members/{slug}/goals/schedules", member_goals.api_member_goals_schedules
+    )
+    app.router.add_get("/api/members/{slug}/briefing", m.api_member_briefing)
+    app.router.add_delete("/api/agents/{name}", handlers.api_kirocrew_agent_delete)
+    app.router.add_put("/api/agents/{name}", handlers.api_kirocrew_agent_update)
+    async with TestClient(TestServer(app)) as client:
+        status, body = await _call(
+            client, method, path, json={"member": MADE, "rules": "x"}, headers=_teammate(client)
+        )
+    assert status == 403, body
+    assert body["code"] == "owner_only"
+
+
+def _create_app(tmp_path) -> web.Application:
+    from kiro_crew.dashboard import handlers
+    from kiro_crew.dashboard.handlers import member_export
+
+    app = _app(tmp_path)
+    app.router.add_post("/api/agents", handlers.api_kirocrew_agents_create)
+    app.router.add_post("/api/members/{slug}/export", member_export.api_member_export)
+    app.router.add_post(
+        "/api/members/{slug}/export/lessons-draft", member_export.api_member_export_lessons_draft
+    )
+    return app
+
+
+@pytest.mark.asyncio
+async def test_a_relay_teammate_passes_the_create_gate_as_the_owner_does(tmp_path) -> None:
+    # A nameless create stops at the handler's own first check, so reaching it
+    # proves the gate let the teammate through without writing a Bot.
+    body = {"name": "", "kiro_agent": "kirocrew"}
+    async with TestClient(TestServer(_create_app(tmp_path))) as client:
+        status, out = await _call(
+            client, "POST", "/api/agents", json=body, headers=_teammate(client)
+        )
+        owner_status, owner_out = await _call(
+            client, "POST", "/api/agents", json=body, params={"token": generate_token(OWNER)}
+        )
+    assert (status, out) == (owner_status, owner_out) == (400, {"error": "Agent name is required"})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("extra", "field"),
+    [
+        ({"kiro_agent": "aim-agent"}, "kiro_agent"),
+        ({"kiro_agent": "kirocrew", "approval_mode": "trust"}, "approval_mode"),
+        ({"kiro_agent": "kirocrew", "source": "package"}, "source"),
+    ],
+)
+async def test_a_relay_teammates_create_cannot_set_a_crew_level_field(
+    tmp_path, extra: dict, field: str
+) -> None:
+    body = {"name": "scout", **extra}
+    async with TestClient(TestServer(_create_app(tmp_path))) as client:
+        status, out = await _call(
+            client, "POST", "/api/agents", json=body, headers=_teammate(client)
+        )
+    assert status == 403, out
+    assert out["code"] == "owner_only"
+    assert out["fields"] == [field]
+
+
+@pytest.mark.asyncio
+async def test_a_relay_teammates_refused_create_is_audited_denied_not_allowed(
+    tmp_path, monkeypatch
+) -> None:
+    records: list[dict] = []
+    monkeypatch.setattr(
+        m, "_sel", lambda: SimpleNamespace(log_api_access=lambda **kw: records.append(kw))
+    )
+    body = {"name": "scout", "kiro_agent": "aim-agent"}
+    async with TestClient(TestServer(_create_app(tmp_path))) as client:
+        status, _ = await _call(client, "POST", "/api/agents", json=body, headers=_teammate(client))
+    assert status == 403
+    create_rows = [r for r in records if r.get("operation") == "agent.create"]
+    assert create_rows == [
+        {
+            "caller": f"relay:{ANA}",
+            "operation": "agent.create",
+            "outcome": "denied",
+            "source": "dashboard",
+            "resources": "fields=kiro_agent",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_a_relay_teammates_bot_is_pinned_to_normal_approvals(tmp_path, monkeypatch) -> None:
+    # An unset mode would open the Bot's thread in trust. The mode check sees the
+    # pin; the bad display name then stops the create before anything is written.
+    from kiro_crew import approval_mode_policy
+
+    asked: list[str] = []
+    monkeypatch.setattr(
+        approval_mode_policy, "session_mode_permitted", lambda mode: asked.append(mode) or True
+    )
+    body = {"name": "scout", "kiro_agent": "kirocrew", "display_name": 7}
+    async with TestClient(TestServer(_create_app(tmp_path))) as client:
+        status, out = await _call(
+            client, "POST", "/api/agents", json=body, headers=_teammate(client)
+        )
+        owner_status, _ = await _call(
+            client, "POST", "/api/agents", json=body, params={"token": generate_token(OWNER)}
+        )
+    assert (status, out["code"]) == (400, "invalid_display_name")
+    assert owner_status == 400
+    # Asked once, for the teammate's create only: the owner's unset mode stays unset.
+    assert asked == ["normal"]
+
+
+@pytest.mark.asyncio
+async def test_a_relay_teammate_exports_a_bot_but_not_its_lessons_draft(tmp_path) -> None:
+    path = f"/api/members/{_slug(MADE)}/export"
+    async with TestClient(TestServer(_create_app(tmp_path))) as client:
+        # No member named: the export's own first body check answers, past the gate.
+        status, out = await _call(client, "POST", path, json={}, headers=_teammate(client))
+        draft_status, draft = await _call(
+            client,
+            "POST",
+            path + "/lessons-draft",
+            json={"member": MADE},
+            headers=_teammate(client),
+        )
+    assert (status, out["code"]) == (400, "missing_member")
+    assert (draft_status, draft["code"]) == (403, "owner_only")
+
+
+@pytest.mark.asyncio
+async def test_the_owners_rules_read_is_unchanged_by_the_teammate_branch(tmp_path) -> None:
+    app = _app(tmp_path)
+    async with TestClient(TestServer(app)) as client:
+        params = {"token": generate_token(OWNER), "member": MADE}
+        path = f"/api/members/{_slug(MADE)}/rules"
+        status, body = await _call(client, "GET", path, params=params)
+        with patch.object(routes_identity, "_relay_teammate", return_value=False):
+            status_before, body_before = await _call(client, "GET", path, params=params)
+    assert status == status_before == 200
+    assert body == body_before

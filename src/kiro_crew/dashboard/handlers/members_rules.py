@@ -23,6 +23,7 @@ from kiro_crew.dashboard.handlers.members_access import (
     _deny_app_caller,
     _member_names_for_slug,
     _sel,
+    _teammate_admitted,
 )
 from kiro_crew.dashboard.state import DashboardState
 from kiro_crew.members import MemberSlugError
@@ -46,14 +47,15 @@ async def api_member_rules_get(request: web.Request) -> web.Response:
     denied = await _deny_app_caller(request, "members.rules")
     if denied is not None:
         return denied
-    # Owner gate, same boundary as the PUT: the rules are the OWNER's private
-    # safety instructions for this member. A Telegram, Teams or Webex allowlist
-    # user can mint a dashboard session, so without this gate a non-owner
-    # colleague could read boundaries the owner never shared — disclosure is
-    # one-way, so the read is gated exactly like the write.
-    owner_denied = await require_owner_dashboard_request(request, "members.rules.read")
-    if owner_denied is not None:
-        return owner_denied
+    # Owner gate: the rules are the owner's safety instructions for this member. A
+    # Telegram, Teams or Webex allowlist user can mint a dashboard session, so
+    # without this gate a non-owner colleague could read boundaries the owner never
+    # shared. A team Crew teammate reads a person-created Bot's rules, as they read
+    # a session's steering; writing them stays owner-only (the PUT below).
+    if not await _teammate_admitted(request, "members.rules.read", slug=request.match_info["slug"]):
+        owner_denied = await require_owner_dashboard_request(request, "members.rules.read")
+        if owner_denied is not None:
+            return owner_denied
     slug = request.match_info["slug"]
     try:
         members_mod.validate_slug(slug)
