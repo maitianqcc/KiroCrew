@@ -72,7 +72,9 @@ _SECRET_NAME_SUFFIX = "_CLIENT_SECRET"
 _CLIENT_ID_PATTERN = re.compile(r"^[\x21-\x7e]{1,512}$")
 _CLIENT_SECRET_MAX_LEN = 4096
 
-Source = Literal["env", "config", "vault", "registry"]
+#: ``server``: the public client id the user already set on their own MCP entry
+#: for a public provider (``oauth.clientId``), read but never written.
+Source = Literal["env", "config", "vault", "registry", "server"]
 
 
 def _slug_token(slug: str) -> str:
@@ -271,6 +273,7 @@ def oauth_client_view(
     config: Mapping[str, Any] | None,
     vault_names: set[str] | frozenset[str],
     environ: Mapping[str, str] | None = None,
+    server_client_id: str | None = None,
 ) -> OAuthClientView:
     """The dashboard-facing record for ``provider``; carries no secret value.
 
@@ -304,6 +307,10 @@ def oauth_client_view(
             from_registry = validate_client_id(provider.get("client_id"))
             if from_registry:
                 view["client_id"], view["client_id_source"] = from_registry, "registry"
+    from_server = validate_client_id(server_client_id)
+    if view["client_id"] is None and from_server and not view["confidential"]:
+        # Last: the id on the user's own entry for a public provider.
+        view["client_id"], view["client_id_source"] = from_server, "server"
 
     if validate_client_secret(env.get(client_secret_env_name(slug))):
         view["client_secret_set"], view["client_secret_source"] = True, "env"

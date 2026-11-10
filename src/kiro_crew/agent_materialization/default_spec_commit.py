@@ -20,6 +20,16 @@ from kiro_crew.mcp_cleanup import prune_dangling_tool_refs
 from kiro_crew.mcp_utils import mcp_server_alias
 
 
+def _without_client_secret(entry: dict) -> dict:
+    """*entry* with its ``oauth.clientSecret`` removed; every other key kept."""
+    from kiro_crew.mcp_utils import KIRO_OAUTH_KEY
+
+    oauth = entry.get(KIRO_OAUTH_KEY)
+    if not isinstance(oauth, dict) or "clientSecret" not in oauth:
+        return entry
+    return {**entry, KIRO_OAUTH_KEY: {k: v for k, v in oauth.items() if k != "clientSecret"}}
+
+
 def _apply_operator_oauth_client(name: str, entry: dict, *, managed: bool) -> dict:
     """Bind the operator's pre-registered OAuth client to a Connections server.
 
@@ -34,8 +44,9 @@ def _apply_operator_oauth_client(name: str, entry: dict, *, managed: bool) -> di
 
     For a managed server, a no-op unless it is a registry provider in
     ``auth.mode = "preregistered"`` at the registry's own URL; for such a
-    provider the operator has not configured yet the entry is emitted with the
-    three owned keys removed (a cleared client must not survive the merge onto
+    confidential provider the operator has not configured yet the entry is
+    emitted with the three owned keys removed (a public one loses only the
+    secret, see below) (a cleared client must not survive the merge onto
     the previous spec) and kiro-cli's own DCR attempt fails against the vendor
     exactly as it would today, while the card already says why. When configured,
     the client id, the secret (confidential clients) and the pinned redirect URI
@@ -75,10 +86,13 @@ def _apply_operator_oauth_client(name: str, entry: dict, *, managed: bool) -> di
         return entry
     from kiro_crew.connections import crew_oauth
 
+    public = not provider["auth"].get("confidential")
     if crew_oauth.strips_spec_secret(str(provider["slug"])):
         # Crew signs in with the vault's copy and no kiro-cli session reads the
-        # oauth block, so the plaintext secret here would be read by nobody.
-        return strip_preregistered_oauth_client(entry)
+        # oauth block, so the plaintext secret here would be read by nobody. A
+        # public client's id is the user's and not a secret: it stays, and
+        # Crew's own sign-in reads it back (``crew_oauth.server_oauth_hints``).
+        return _without_client_secret(entry) if public else strip_preregistered_oauth_client(entry)
     from kiro_crew.secrets import SecretVault
 
     resolved = resolve_oauth_client(
@@ -87,6 +101,13 @@ def _apply_operator_oauth_client(name: str, entry: dict, *, managed: bool) -> di
         vault=SecretVault(config_dir()),
     )
     if resolved is None:
+        if public:
+            # A public PKCE client (Slack) the operator has not configured: the
+            # entry's own ``clientId`` is the user's (the store's hint, set by
+            # the wire step), and a user who signed in with it on kiro-cli before
+            # this provider joined the registry keeps that sign-in. Only the
+            # secret is the operator's alone, so only it goes.
+            return _without_client_secret(entry)
         # The rebuild merges onto the PREVIOUS installed spec, so a client the
         # operator cleared would otherwise survive there verbatim -- a retired
         # secret still presented at the token endpoint and still readable in
