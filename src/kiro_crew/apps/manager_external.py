@@ -21,6 +21,7 @@ from kiro_crew.apps.execution import repository_bound_grant_denied
 from kiro_crew.apps.host_exec_grants import grant_host_exec
 from kiro_crew.apps.manager_builtins import _builtin_owns_install
 from kiro_crew.apps.manager_records import (
+    _AWAITING_MANIFEST_TEXT,
     APP_MANIFEST_FILENAME,
     INSTALLED_META_FILENAME,
     AppResult,
@@ -35,8 +36,8 @@ from kiro_crew.apps.manager_records import (
     _read_installed,
     _restore_approved_grants,
     _session_control_widening,
-    _write_approve_declared,
     _write_approved_grants,
+    _write_awaiting_manifest,
     _write_installed,
     app_data_dir,
     app_dir,
@@ -301,10 +302,18 @@ def register_external_app(
     if not manifest_data:
         if existing:
             approved_grants = _effective_approved_grants(name, existing)
-        elif (on_disk := get_app_manifest(name)) is not None:
-            approved_grants = _declared_grant_entries(grant_source(on_disk))
+        elif _approved_grants_snapshot(name) is not None:
+            # A record the folder lost (renamed aside, recreated): the sealed set
+            # stands. The folder's own app.json, which an agent can write, never
+            # decides what is approved.
+            approved_grants = _effective_approved_grants(name, None)
         else:
             approved_grants = None
+    elif existing and prior_grants_text == _AWAITING_MANIFEST_TEXT:
+        # The first manifest of a registration that declared nothing, sent by this
+        # owner route: approved as declared, as a first registration with it would be.
+        # The sealed store, not the agent-writable app.json, says none came before.
+        approved_grants = _declared_grant_entries(new_permissions)
     elif existing:
         approved_grants = _approved_grants_after_manifest_change(
             existing_approved=prior_grants,
@@ -422,9 +431,9 @@ def register_external_app(
         if approved_grants is not None:
             _write_approved_grants(name, approved_grants)
         else:
-            # Nothing declared yet: a later manifest is approved as declared, as an
-            # install from before approved sets existed.
-            _write_approve_declared(name)
+            # Nothing declared yet: the first manifest this route sends is approved
+            # as declared; one written into the app's folder approves nothing.
+            _write_awaiting_manifest(name)
         _write_installed(name, meta)
         # Persist manifest if provided (so dashboard can show full info).
         if manifest_data:
@@ -437,8 +446,14 @@ def register_external_app(
     # Generate app secret only for new registrations — preserve existing secrets
     from kiro_crew.dashboard.token_auth import generate_app_secret, write_app_secret
 
-    secret_path = dest / ".app_secret"
-    is_new_secret = not (existing and secret_path.is_file())
+    # The stored record alone: a registration from before the gateway kept it gets a new
+    # secret IN ITS RESPONSE, the only channel a self-managed app has, rather than one
+    # replaced behind its back.
+    try:
+        has_secret = protected_app_state.read_secret(name) is not None
+    except (OSError, UnicodeDecodeError, ValueError):
+        has_secret = False
+    is_new_secret = not (existing and has_secret)
     if is_new_secret:
         secret = generate_app_secret()
         write_app_secret(name, secret)
