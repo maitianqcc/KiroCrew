@@ -584,10 +584,36 @@ class TestMacOSDriverHappyPaths:
         assert result.text
 
     def test_press_key_posts_a_parsed_combination(self, fakes: _Fakes):
+        fakes.ax.attrs[(_H_ELEMENT, "AXFrontmost")] = fakes.new_bool(True)
         result = macos_driver.MacOSBackend().press_key(_APP, None, "cmd+s")
         assert result.ok is True
         posted = [a for (n, a) in fakes.cg.calls if n == "CGEventPostToPid"]
         assert posted, "no key event reached the target pid"
+
+    @staticmethod
+    def _posted(fakes: _Fakes) -> list:
+        return [a for (n, a) in fakes.cg.calls if n == "CGEventPostToPid"]
+
+    def test_cmd_shortcut_to_a_background_app_is_refused(self, fakes: _Fakes):
+        """macOS delivers a Cmd shortcut only to the frontmost app: Cmd+A posted to a
+        background TextEdit selected nothing while the tool answered "sent cmd+a"."""
+        fakes.ax.attrs[(_H_ELEMENT, "AXFrontmost")] = fakes.new_bool(False)
+        result = macos_driver.MacOSBackend().press_key(_APP, None, "cmd+a")
+        assert result.ok is False
+        assert "not the frontmost app" in result.text
+        assert not self._posted(fakes)
+
+    def test_cmd_shortcut_counts_an_unreadable_frontmost_state_as_background(self, fakes: _Fakes):
+        result = macos_driver.MacOSBackend().press_key(_APP, None, "cmd+a")
+        assert result.ok is False
+        assert not self._posted(fakes)
+
+    def test_a_plain_key_to_a_background_app_is_not_gated(self, fakes: _Fakes):
+        """Only Cmd shortcuts were measured to need the frontmost app."""
+        fakes.ax.attrs[(_H_ELEMENT, "AXFrontmost")] = fakes.new_bool(False)
+        result = macos_driver.MacOSBackend().press_key(_APP, None, "return")
+        assert result.ok is True
+        assert self._posted(fakes)
 
     def test_type_text_posts_unicode_rather_than_keycodes(self, fakes: _Fakes):
         backend, rec, _ = self._staged(fakes)
@@ -602,6 +628,7 @@ class TestMacOSDriverHappyPaths:
         path is only reachable by an in-process caller — but the driver seam must
         still behave, rather than refusing on a focus attempt it never made.
         """
+        fakes.ax.attrs[(_H_ELEMENT, "AXFrontmost")] = fakes.new_bool(True)
         result = macos_driver.MacOSBackend().press_key(_APP, None, "cmd+s")
         assert result.ok is True
 

@@ -38,7 +38,7 @@ from computer_use_snapshot_macos_helpers import (  # noqa: F401 -- the fixture i
 # broke on the 3.10 shard. pytest inserts each test file's directory on
 # ``sys.path`` (rootdir-relative ``consider_namespace_packages``-free import mode),
 # so the bare module name is the form that always resolves.
-from test_computer_use_ffi import _Fakes
+from test_computer_use_ffi import _H_ELEMENT, _Fakes
 
 from kiro_crew.computer_use import macos_driver, macos_ffi, snapshot_macos
 from kiro_crew.computer_use.types import (
@@ -193,6 +193,8 @@ class TestKeyboardRefusesOnAFailedFocus:
     def test_press_key_refuses_and_posts_NOTHING(self, fakes: _Fakes):
         backend, rec = self._staged(fakes)
         _fail_focus(fakes)
+        # Frontmost, so the refusal under test is the focus one, not the Cmd one.
+        fakes.ax.attrs[(_H_ELEMENT, "AXFrontmost")] = fakes.new_bool(True)
         result = backend.press_key(_APP, rec, "cmd+a")
         assert result.ok is False
         assert not [a for (n, a) in fakes.cg.calls if n == "CGEventPostToPid"]
@@ -206,6 +208,7 @@ class TestKeyboardRefusesOnAFailedFocus:
         """No element to focus means nothing to fail — the refusal must not fire on a
         path that never attempted a focus."""
         _stage_window(fakes, children=[{"role": "AXButton", "title": "Save"}])
+        fakes.ax.attrs[(_H_ELEMENT, "AXFrontmost")] = fakes.new_bool(True)
         assert macos_driver.MacOSBackend().press_key(_APP, None, "cmd+s").ok is True
 
 
