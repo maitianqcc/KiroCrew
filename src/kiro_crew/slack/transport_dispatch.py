@@ -24,7 +24,7 @@ import time
 from typing import TYPE_CHECKING, Any, cast
 
 from kiro_crew import runtime_death
-from kiro_crew.agent_sdk.drivers.acp_vocab import is_user_worded_failure
+from kiro_crew.agent_sdk.drivers.acp_vocab import STOP_REASON_CANCELLED, is_user_worded_failure
 from kiro_crew.context import session_store_for_turn
 from kiro_crew.dashboard.chat_utils import (
     expire_slack_options,
@@ -49,11 +49,13 @@ from kiro_crew.messaging.dispatch import (
     driver_turn_landed,
     rearm_reinjection,
     rollback_skill_bodies,
+    session_stop_generation,
 )
 from kiro_crew.messaging.driver import APPROVAL_INTERACTIVE, TurnDriver
 from kiro_crew.messaging.identity import channel_inbound_permitted, publish_turn_identity
 from kiro_crew.messaging.inbound_spool import InboundRoute, spool_refused_turn
 from kiro_crew.messaging.link import SLACK_NAMESPACE, canonical_key
+from kiro_crew.messaging.renderer import DONE, OutputEvent
 from kiro_crew.messaging.script_hooks import ScriptHookTurn
 from kiro_crew.messaging.turn_ceiling import TurnCeilingExceeded
 from kiro_crew.parent_turns import note_turn_landed
@@ -641,6 +643,8 @@ async def handle_message_transport(
     # handling the original error.
     _logged_user_turn = False
     _stamped_turn = False
+    # Whether a re-projection left this turn holding the replay gap.
+    _reprojected = False
     # Post-compaction re-injection bookkeeping for the finally: whether this
     # turn consumed the one-shot flag, and whether it landed (recorded success).
     _needs_reinjection = False
@@ -758,11 +762,39 @@ async def handle_message_transport(
         )
         _acquired = True
         # Taken on acquisition: a Stop from here on cancels the turn before it streams.
+        _stop_gen_at_entry = session_stop_generation(sessions, session_key)
         hook_turn = (
             ScriptHookTurn.stoppable(sessions, session_key, text)
             if runs_script_hooks(channel, user_id)
             else None
         )
+        # After the Stop snapshot: a KAS batch that auto-approves what a PreToolUse
+        # hook now covers is reset and claimed again under the replay gap, which
+        # the ``finally`` closes after the release.
+        from kiro_crew.agent_sdk.spec_hooks import reproject_unattended_claim, running_agent
+
+        async def _reclaim() -> tuple[Any, bool, bool]:
+            return await sessions.get_or_create(
+                session_key, channel_id=channel, start_priority=start_priority, **_alloc
+            )
+
+        _reprojection = await reproject_unattended_claim(
+            sessions,
+            session_key,
+            running_agent(client, _agent),
+            (client, is_new, resumed),
+            _reclaim,
+        )
+        client, is_new, resumed = _reprojection.claimed
+        assert client is not None
+        _reprojected = _reprojection.reprojected
+        if (
+            _reprojection.reprojected
+            and session_stop_generation(sessions, session_key) != _stop_gen_at_entry
+        ):
+            # A Stop while the session was re-projected: nothing ran.
+            await renderer.dispatch(OutputEvent(kind=DONE, stop_reason=STOP_REASON_CANCELLED))
+            return
         # Authorize the outbound-image root, which only exists once the provider
         # does. Unauthorized, `_upload_root` stays empty and `_uploads_enabled()`
         # is permanently False, so the whole extract-and-upload path is dead while
@@ -1590,6 +1622,11 @@ async def handle_message_transport(
         finally:
             if _acquired:
                 sessions.release(session_key)
+                if _reprojected:
+                    # After the release, as the shared pipeline closes its own.
+                    from kiro_crew.agent_sdk.spec_hooks import close_reprojection_gap
+
+                    close_reprojection_gap(sessions, session_key)
                 # The release is what ends the turn for an open dashboard tab
                 # bound to this thread (it reads the lease as the turn running),
                 # and a release raises no slots push of its own. Refresh once

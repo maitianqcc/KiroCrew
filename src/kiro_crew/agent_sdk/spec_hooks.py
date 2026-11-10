@@ -1799,14 +1799,39 @@ async def reproject_claimed_session(
     :data:`_MAX_REPROJECTIONS` resets, rather than running the turn on a batch
     that would auto-approve a call a hook covers.
     """
+    claimed, stale = await _reproject(sessions, session_key, agent_id, claimed, claim)
+    if stale:
+        raise StaleProjectionError(
+            f"agent {agent_id!r}: the session could not be re-projected for the "
+            "PreToolUse hooks now in place; the turn was not run"
+        )
+    return claimed
+
+
+async def _reproject(
+    sessions: Any,
+    session_key: str,
+    agent_id: str,
+    claimed: tuple[Any, bool, bool],
+    claim: Callable[[], Awaitable[tuple[Any, bool, bool]]],
+    *,
+    before_reset: Callable[[], None] | None = None,
+) -> tuple[tuple[Any, bool, bool], bool]:
+    """*claimed*, reset and claimed again while stale; and whether it still is.
+
+    *before_reset* runs once, with no await before the first reset.
+    """
     for _ in range(_MAX_REPROJECTIONS):
         if not await hook_projection_stale(claimed[0], agent_id):
-            return claimed
+            return claimed, False
         logger.info(
             "agent %r: the claimed session auto-approves a capability a PreToolUse "
             "hook now covers; re-projecting it before the turn runs",
             agent_id,
         )
+        if before_reset is not None:
+            before_reset()
+            before_reset = None
         await sessions.reset(session_key)
         claimed = await claim()
         # The reset recorded this task as the holder of the permit it popped; this
@@ -1815,12 +1840,79 @@ async def reproject_claimed_session(
         adopt = getattr(sessions, "adopt_turn", None)
         if callable(adopt):
             adopt(session_key)
-    if await hook_projection_stale(claimed[0], agent_id):
-        raise StaleProjectionError(
-            f"agent {agent_id!r}: the session could not be re-projected for the "
-            "PreToolUse hooks now in place; the turn was not run"
+    return claimed, await hook_projection_stale(claimed[0], agent_id)
+
+
+class UnattendedClaim(NamedTuple):
+    """:func:`reproject_unattended_claim`'s answer."""
+
+    claimed: tuple[Any, bool, bool]
+    #: The session was reset and claimed again; the replay gap is open and the
+    #: caller closes it after its release.
+    reprojected: bool
+    #: Still stale after :data:`_MAX_REPROJECTIONS` resets: the caller keeps its
+    #: stale-batch fallback, it does not refuse the turn.
+    still_stale: bool
+
+
+async def reproject_unattended_claim(
+    sessions: Any,
+    session_key: str,
+    agent_id: str,
+    claimed: tuple[Any, bool, bool],
+    claim: Callable[[], Awaitable[tuple[Any, bool, bool]]],
+) -> UnattendedClaim:
+    """A cron or channel claim, re-projected when its KAS batch is stale.
+
+    Called with the lease held and AFTER the caller took its Stop snapshot, so a
+    Stop pressed during the re-projection reads as one. The replay gap is opened
+    before the first reset, so a Stop while the key has no session is still
+    recorded and every other claim on the key waits for this turn
+    (``SessionManager.open_replay_gap``). The caller closes it after its release
+    (``close_replay_gap``, owner-checked and idempotent), and before its prompt
+    re-reads the Stop count when *reprojected*. A reset or claim that raises
+    closes the gap here. *claim* must run, with no await after its allocation,
+    the same synchronous steps the caller's own claim runs.
+    """
+    opened = False
+
+    def _open_gap() -> None:
+        # Probed: a session stand-in may predate the gap.
+        nonlocal opened
+        opener = getattr(sessions, "open_replay_gap", None)
+        if callable(opener):
+            opener(session_key)
+        opened = True
+
+    try:
+        claimed, stale = await _reproject(
+            sessions, session_key, agent_id, claimed, claim, before_reset=_open_gap
         )
-    return claimed
+    except BaseException:
+        # The caller learns of no re-projection, so it closes no gap: this does.
+        closer = getattr(sessions, "close_replay_gap", None)
+        if opened and callable(closer):
+            closer(session_key)
+        raise
+    if stale:
+        logger.warning(
+            "agent %r: the session is still stale after %d re-projections; this "
+            "turn keeps the stale-batch fallback",
+            agent_id,
+            _MAX_REPROJECTIONS,
+        )
+    return UnattendedClaim(claimed, opened, stale)
+
+
+def close_reprojection_gap(sessions: Any, session_key: str) -> None:
+    """Close the gap :func:`reproject_unattended_claim` left open, after the release.
+
+    Owner-checked and idempotent (``SessionManager.close_replay_gap``); probed,
+    as the open is.
+    """
+    closer = getattr(sessions, "close_replay_gap", None)
+    if callable(closer):
+        closer(session_key)
 
 
 async def replace_stale_shared_session(

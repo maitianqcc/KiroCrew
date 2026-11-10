@@ -44,6 +44,7 @@ from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from kiro_crew import _facade_mirror
 from kiro_crew.acp.types import STOP_REASON_COMPACTION_FAILED
+from kiro_crew.agent_sdk.drivers.acp_vocab import STOP_REASON_CANCELLED
 from kiro_crew.context import session_store_for_turn
 from kiro_crew.executors import (
     TURN_BUILD_ADMISSION_TIMEOUT_SECS,
@@ -741,6 +742,8 @@ class ChannelTurns:
         resumed = False
         memory_store: Any = None
         claimed = False
+        # Whether a re-projection left this turn holding the replay gap.
+        _reprojected = False
         if monitor is not None:
             # A wake claims its session WITHOUT waiting, before anything is built: a
             # conversation already in a turn answers BUSY and the wake retries its
@@ -959,6 +962,52 @@ class ChannelTurns:
                         conv_gen_at_entry = session_conversation_generation(sessions, session_key)
                 if turn_is_new is None:
                     turn_is_new = is_new
+                if not deny_all_tools:
+                    # After the Stop snapshot: a KAS batch that auto-approves what a
+                    # PreToolUse hook now covers is reset and claimed again under the
+                    # replay gap, which the ``finally`` closes after the release.
+                    from kiro_crew.agent_sdk.spec_hooks import (
+                        reproject_unattended_claim,
+                        running_agent,
+                    )
+
+                    _claim_kwargs: dict[str, Any] = (
+                        {"wait_if_busy": False} if monitor is not None and not replaying else extra
+                    )
+
+                    async def _reclaim() -> tuple[Any, bool, bool]:
+                        nonlocal _turn_provider
+                        got = await sessions.get_or_create(
+                            session_key,
+                            agent=session_agent,
+                            channel_id=asker.conversation_id,
+                            start_priority=asker.start_priority,
+                            **_claim_kwargs,
+                        )
+                        _turn_provider = got[0]
+                        if self._opens_crew_log(asker):
+                            self._open_crew_log(got[0], session_key, agent, got[2], crew_log_store)
+                        return got
+
+                    reprojection = await reproject_unattended_claim(
+                        sessions,
+                        session_key,
+                        running_agent(provider, session_agent),
+                        (provider, is_new, resumed),
+                        _reclaim,
+                    )
+                    provider, is_new, resumed = reprojection.claimed
+                    _reprojected = _reprojected or reprojection.reprojected
+                    if (
+                        reprojection.reprojected
+                        and session_stop_generation(sessions, session_key) != stop_gen_at_entry
+                    ):
+                        # A Stop while the session was re-projected: nothing ran.
+                        await renderer.dispatch(
+                            OutputEvent(kind=DONE, stop_reason=STOP_REASON_CANCELLED)
+                        )
+                        verdict = Verdict.ABANDONED
+                        return self._outcome(verdict, monitor, acquired=True)
                 if retry_guard is not None:
                     retry_guard.provider = provider
                 if prepare is not None:
@@ -1512,7 +1561,7 @@ class ChannelTurns:
                 # it closes), so the release cannot wait on the guard above.
                 if _acquired:
                     sessions.release(session_key)
-                if recovery:
+                if recovery or _reprojected:
                     # Closed LAST, after the permit is back: a message that waited
                     # behind the gap then finds an idle successor instead of a
                     # semaphore a later reset could pop from under it. Idempotent, so
