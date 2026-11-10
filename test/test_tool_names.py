@@ -65,10 +65,15 @@ class TestTheTablesMatchTheRecordedEngine:
 
     @classmethod
     def _mountable(cls) -> set[str]:
-        """Every id the engine's allowlist matcher can match: the local built-ins
-        plus the ones its remote wrapper serves under a ``remote_`` prefix."""
+        """Every id the engine's allowlist matcher can match: the local built-ins,
+        the ones its remote wrapper serves under a ``remote_`` prefix, and the
+        background-process control tools."""
         reg = cls._registry()
-        return set(reg["registered"]) | set(reg["remote"]["ids"])
+        return (
+            set(reg["registered"])
+            | set(reg["remote"]["ids"])
+            | set(reg["process_control"]["ids"])
+        )
 
     def test_every_mounted_id_is_a_registered_engine_tool(self):
         mountable = self._mountable()
@@ -326,8 +331,14 @@ class TestTheTwoReadingsHaveOppositePolarity:
 
     def test_excluding_the_shell_emits_only_its_registered_id(self):
         """``run_command`` is reported, not registered; emitting it would exclude
-        nothing, and ``execute_bash`` already withholds the shell."""
-        assert expand_kiro_cli_tool_exclusions(["execute_bash"]) == ["execute_bash"]
+        nothing, and ``execute_bash`` already withholds the shell. The
+        background-process tools are registered, so excluding the shell
+        withholds them too."""
+        assert expand_kiro_cli_tool_exclusions(["execute_bash"]) == [
+            "execute_bash",
+            "control_bash_process",
+            "control_pwsh_process",
+        ]
 
     def test_exclusion_reading_passes_unknown_names_through(self):
         assert expand_kiro_cli_tool_exclusions(["@srv", "tool_search", ""]) == [

@@ -120,7 +120,16 @@ def kas_verified_releases() -> str:
 #: ``invoke_sub_agent`` (capability ``subagent``). Without the row a spec that
 #: lists ``use_subagent`` got no sub-agent tool on KAS, so it could not delegate
 #: to the agents its ``toolsSettings.subagent.availableAgents`` names.
+#:
+#: ``execute_bash`` is a KAS id too, but KAS splits kiro-cli's shell in two: the
+#: command runner and a separate tool that starts, reads and stops a long-running
+#: command (``control_bash_process``, or ``control_pwsh_process`` on a Windows
+#: shell; the fixture's ``process_control`` list). Without the row a spec that
+#: names ``execute_bash`` -- every Bot worker -- could run a command on KAS but
+#: never keep a dev server up while it works. Both ids are listed because the
+#: engine picks one by the session's shell; the gate reads both as the shell.
 KAS_TOOL_FAMILY_BY_KIRO_CLI_NAME: dict[str, tuple[str, ...]] = {
+    "execute_bash": ("control_bash_process", "control_pwsh_process"),
     "fs_read": ("read_file", "list_directory"),
     "glob": ("file_search",),
     "grep": ("grep_search",),
