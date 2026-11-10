@@ -23867,5 +23867,12 @@
         "label_is_open_in_its_own_window_focus_it": "L'application {{label}} est ouverte dans sa propre fenêtre — l'activer"
       }
     }
+  },
+  "connectedComputers": {
+    "preview": {
+      "description": "Permet aux fichiers et commandes d’une discussion de s’exécuter sur ton propre ordinateur pendant que l’agent reste sur la passerelle.",
+      "hint": "Active-le ici et sur l’ordinateur que tu partages. Le désactiver arrête le partage tout de suite et coupe les connexions en cours. Aucun fichier n’est jamais supprimé.",
+      "label": "Ordinateurs connectés"
+    }
   }
 }

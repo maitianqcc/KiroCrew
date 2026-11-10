@@ -23867,5 +23867,12 @@
         "label_is_open_in_its_own_window_focus_it": "O app {{label}} está aberto em sua própria janela — focar nela"
       }
     }
+  },
+  "connectedComputers": {
+    "preview": {
+      "description": "Permite que os arquivos e comandos de um chat rodem no seu próprio computador enquanto o agente fica no gateway.",
+      "hint": "Ative aqui e no computador que você compartilha. Desativar interrompe o compartilhamento na hora e encerra as conexões ativas. Nunca apaga arquivos.",
+      "label": "Computadores conectados"
+    }
   }
 }

@@ -23322,5 +23322,12 @@
         "label_is_open_in_its_own_window_focus_it": "{{label}} ist in einem eigenen Fenster geöffnet — dieses fokussieren"
       }
     }
+  },
+  "connectedComputers": {
+    "preview": {
+      "description": "Lässt die Dateien und Befehle eines Chats auf deinem eigenen Computer laufen, während der Agent auf dem Gateway bleibt.",
+      "hint": "Schalte es hier und auf dem Computer ein, den du freigibst. Ausschalten beendet die Freigabe sofort und trennt laufende Verbindungen. Dateien werden nie gelöscht.",
+      "label": "Verbundene Computer"
+    }
   }
 }

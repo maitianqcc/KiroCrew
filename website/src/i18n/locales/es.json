@@ -23867,5 +23867,12 @@
         "label_is_open_in_its_own_window_focus_it": "La app {{label}} está abierta en su propia ventana — enfócala"
       }
     }
+  },
+  "connectedComputers": {
+    "preview": {
+      "description": "Permite que los archivos y comandos de un chat se ejecuten en tu propia computadora mientras el agente se queda en el gateway.",
+      "hint": "Actívalo aquí y en la computadora que compartes. Al desactivarlo se deja de compartir de inmediato y se cierran las conexiones activas. Nunca borra archivos.",
+      "label": "Computadoras conectadas"
+    }
   }
 }

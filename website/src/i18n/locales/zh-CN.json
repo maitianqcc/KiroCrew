@@ -22777,5 +22777,12 @@
         "label_is_open_in_its_own_window_focus_it": "{{label}} 已在独立窗口中打开 — 聚焦它"
       }
     }
+  },
+  "connectedComputers": {
+    "preview": {
+      "description": "让聊天的文件和命令在你自己的电脑上运行，而智能体留在网关上。",
+      "hint": "在这里和你共享的电脑上都打开它。关闭后会立即停止共享并断开当前连接。不会删除任何文件。",
+      "label": "已连接的电脑"
+    }
   }
 }

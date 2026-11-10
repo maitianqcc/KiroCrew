@@ -23867,5 +23867,12 @@
         "label_is_open_in_its_own_window_focus_it": "L'app {{label}} è aperta in una finestra separata — mettila a fuoco"
       }
     }
+  },
+  "connectedComputers": {
+    "preview": {
+      "description": "Esegue i file e i comandi di una chat sul tuo computer mentre l’agente resta sul gateway.",
+      "hint": "Attivalo qui e sul computer che condividi. Disattivarlo interrompe subito la condivisione e chiude le connessioni attive. Non elimina mai i file.",
+      "label": "Computer connessi"
+    }
   }
 }
