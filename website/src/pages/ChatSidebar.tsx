@@ -557,7 +557,10 @@ function ChatSidebar({
   // button is not drawn at all, and an ungated lane would render a layout the user has
   // no control to leave. The folder filter applies to the flat lane and the tree, NOT
   // to the board.
-  const searchActive = slotFilter.trim().length >= SEARCH_MIN_CHARS
+  // Only once the server has answered (or failed): before the first reply the list
+  // has no ranks or snippets yet, so the chosen lane stays, narrowed locally as it
+  // always was, instead of a ranked lane that reads "0 matches" for a moment.
+  const searchActive = slotFilter.trim().length >= SEARCH_MIN_CHARS && (slotSearch !== null || slotSearchFailed)
   const shownLane = renderedLane({ lane, boardColumns: orderedColumns.length, folders: folders.length, lineageAvailable, searching: searchActive })
   const boardLaneActive = shownLane === 'board' || shownLane === 'board-flat'
   const flatLaneActive = shownLane === 'flat'
@@ -954,8 +957,9 @@ function ChatSidebar({
         scan={slotSearch?.scan ?? null}
       />
       <SearchFolderHits
-        folders={folders} query={slotFilter} matchIds={folderNameMatchIds} isFolderHidden={isFolderHidden}
-        rows={flatSlots} folderOf={sidebarRows.folderOf}
+        folders={folders} sortMode={folderSortMode} query={slotFilter} matchIds={folderNameMatchIds} isFolderHidden={isFolderHidden}
+        // Every drawn result, crew-group rows included; `folderOf` refuses peer rows.
+        rows={sidebarRows.filteredSlots} folderOf={sidebarRows.folderOf}
         onOpen={id => { setSlotFilter(''); dispatch(requestFolderReveal(id)) }}
       />
     </>
