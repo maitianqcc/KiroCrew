@@ -20852,6 +20852,7 @@
         "launch_done": "Fertig — deine neue Crew ist bereit und erscheint jetzt unter „Deine Crews“.",
         "launch_done_unsigned": "Die Crew ist bereit und erscheint unter „Deine Crews“, aber Kiro ist darauf noch nicht angemeldet. Schließen Sie die Anmeldung oben ab.",
         "launch_failed_title": "Launch failed",
+        "launch_failed_retry": "Behebe das unten gezeigte Problem oder ändere oben die Subnetz-ID und wähle dann „Launch“, um es erneut zu versuchen.",
         "launch_status_unavailable": "Der Einrichtungsfortschritt konnte nicht aktualisiert werden. Die Karte unten zeigt den letzten empfangenen Stand.",
         "launch_wait_for_setup": "Unten läuft die Einrichtung einer Crew. Du kannst eine weitere Crew starten, sobald sie fertig ist.",
         "launched_by_kiro_crew": "Von {{productName}} gestartet",

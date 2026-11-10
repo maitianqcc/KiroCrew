@@ -939,7 +939,17 @@ export function RemoteCrewPanel() {
     ...loginTargetBody,
   }
   const builtinLaunchKey = launchGuardKey(builtinLaunchBody)
-  const alreadyLaunched = launchedKey === builtinLaunchKey
+  // The launch these settings went out with failed before any crew existed: no
+  // instance came back from provisioning (a failed provision is rolled back) and
+  // nothing registered. Then the same-settings guard no longer holds: Launch
+  // itself is the retry, and nothing offers "another" crew with settings that
+  // just failed. A job that fails AFTER creating its crew (a refused sign-in, a
+  // later step) left a running crew, so the guard stays and a relaunch would
+  // start a second one beside it.
+  const launchFailed = launchedKey === builtinLaunchKey
+    && !!activeJob && activeJob.id === activeLaunchId && activeJob.status === 'failed'
+    && !activeJob.instance_id && !isRegistered(activeJob)
+  const alreadyLaunched = launchedKey === builtinLaunchKey && !launchFailed
   // The gateway refuses a launch while any crew setup is still running
   // (`launch_already_running`), so neither launch button is offered until it ends.
   const setupRunning = !!activeJob && !isTerminal(activeJob)
@@ -1667,6 +1677,12 @@ export function RemoteCrewPanel() {
               {alreadyLaunched && !launchMutation.isPending && !setupRunning && (
                 <Btn onClick={launchBuiltin} disabled={!launchReady}>{i18nT('pages.settings.remoteCrewPanel.launch_another')}</Btn>
               )}
+              {launchFailed && !launchMutation.isPending ? (
+                /* No hand-off: the subnet and sign-in choice this retry will send
+                   live only in this form's state (the store copy was dropped when
+                   the gateway accepted the launch), so navigating away loses them. */
+                <ErrorNotice variant="inline" message={i18nT('pages.settings.remoteCrewPanel.launch_failed_retry')} />
+              ) : (
               <span className="text-[12px] text-muted">
                 {setupRunning && !launchMutation.isPending
                   ? i18nT('pages.settings.remoteCrewPanel.launch_wait_for_setup')
@@ -1686,6 +1702,7 @@ export function RemoteCrewPanel() {
                           ? i18nT('pages.settings.remoteCrewPanel.finish_prereq_named', { check: blockingCheck })
                           : i18nT('pages.settings.remoteCrewPanel.finish_prereqs')}
               </span>
+              )}
             </div>
           </Card>
           </>

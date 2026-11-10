@@ -83,6 +83,7 @@ const RUNNING_JOB = {
 const DONE_JOB = { ...RUNNING_JOB, status: 'done' as const, instance_id: 'i-0abc123456789def0' }
 const REGION_REQUIRED = 'Enter an AWS Region, for example us-east-1.'
 const STALE = 'The profile or Region changed since this check. Re-check to update.'
+const RETRY = 'Fix the problem shown below, or change the Subnet ID above, then choose Launch to try again.'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -186,6 +187,44 @@ describe('RemoteCrewPanel launch form', () => {
     await u.click(screen.getByRole('button', { name: 'Launch another crew' }))
     await waitFor(() => expect(api.cloudLaunch).toHaveBeenCalledTimes(2))
     expect(vi.mocked(api.cloudLaunch).mock.calls[1]).toEqual(vi.mocked(api.cloudLaunch).mock.calls[0])
+  })
+
+  it('after a failed launch says it failed and offers Launch as the retry, not the same settings again', async () => {
+    vi.mocked(api.cloudLaunchStatus).mockResolvedValue({ ...RUNNING_JOB, status: 'failed' as const })
+    const u = userEvent.setup()
+    await openSetup(u)
+
+    const launch = await screen.findByRole('button', { name: /^Launch$/ })
+    await waitFor(() => expect(launch).not.toBeDisabled())
+    await u.click(launch)
+
+    expect(await screen.findByText(RETRY)).toBeInTheDocument()
+    expect(screen.getAllByRole('alert').some(a => a.textContent?.includes(RETRY))).toBe(true)
+    expect(screen.queryByText(/Launched\. Its progress is shown below/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Launch another crew' })).not.toBeInTheDocument()
+    // Launch is the retry: the reader may fix the cause outside the form or change the subnet first.
+    const retry = screen.getByRole('button', { name: /^Launch$/ })
+    expect(retry).not.toBeDisabled()
+    await u.type(screen.getByRole('textbox', { name: 'Subnet ID (optional)' }), 'subnet-0123abcd')
+    await u.click(retry)
+    await waitFor(() => expect(api.cloudLaunch).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(api.cloudLaunch).mock.calls[1][0]).toMatchObject({ subnet_id: 'subnet-0123abcd' })
+  })
+
+  it('keeps the same-settings guard when a launch failed after its crew was created', async () => {
+    // A refused sign-in fails the job after provisioning: the crew exists and bills,
+    // so Launch with the same settings would start a second one beside it.
+    vi.mocked(api.cloudLaunchStatus).mockResolvedValue({ ...RUNNING_JOB, status: 'failed' as const, instance_id: 'i-0abc123456789def0' })
+    const u = userEvent.setup()
+    await openSetup(u)
+
+    const launch = await screen.findByRole('button', { name: /^Launch$/ })
+    await waitFor(() => expect(launch).not.toBeDisabled())
+    await u.click(launch)
+
+    expect(await screen.findByRole('button', { name: 'Launch another crew' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Launch$/ })).toBeDisabled()
+    expect(screen.queryByText(RETRY)).not.toBeInTheDocument()
   })
 
   it('offers no launch while a crew setup is still running, which the gateway would refuse', async () => {

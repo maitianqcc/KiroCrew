@@ -21359,6 +21359,7 @@
         "launch_done": "Fatto — la tua nuova crew è pronta e ora compare in «Le tue crew».",
         "launch_done_unsigned": "La crew è pronta e compare in Le tue crew, ma Kiro non ha ancora effettuato l’accesso su di essa. Completa l’accesso sopra.",
         "launch_failed_title": "Launch failed",
+        "launch_failed_retry": "Risolvi il problema indicato qui sotto oppure cambia l’ID subnet qui sopra, poi scegli Launch per riprovare.",
         "launch_status_unavailable": "Impossibile aggiornare l'avanzamento della configurazione. La scheda sotto mostra l'ultimo stato ricevuto.",
         "launch_wait_for_setup": "Qui sotto è in corso la configurazione di una crew. Potrai avviarne un’altra quando sarà finita.",
         "launched_by_kiro_crew": "Avviata da {{productName}}",
