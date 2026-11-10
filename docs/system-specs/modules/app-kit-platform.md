@@ -1038,6 +1038,30 @@ emitted: besides the external-source label and older clients,
 `appManifest.ts::keysFor` (first-party copy gate) and `pickFeatured`'s
 legacy arm still read it.
 
+### Signed-content checks during backend provisioning and boot
+
+After an actual npm provisioning attempt, the Node backend path re-reads the
+installed manifest and verifies its packaged files before spawning Node. This
+happens after all root-to-entry-directory npm attempts, including nonzero exits
+and exceptions. A refusal is audited by the shared installed-content verifier;
+an unavailable verifier also prevents the spawn. No extra check runs when npm
+was never attempted. Shipped builtins retain their exemption, and no signature
+policy keeps the verifier's no-tree-read fast path. Dependency directories remain
+outside the inventory; this adds no per-request or per-cron-fire check.
+
+Boot revokes executable resources and excludes a refused app from its in-memory
+snapshot in either admission pass. Only signature or packaged-content refusals
+persist disabled state, including apps without backends. Admission carries this
+classification with a private string-subclass marker, not reason-text matching or
+another inventory scan. Inventory open, enumeration, stat, read and close failures
+retain an unavailable kind through the string-compatible refusal chain; they deny
+this boot without persisting disable. A missing or unreadable manifest also carries
+no proof of a bad signature and stays nonpersistent. An unreadable policy still
+fails closed without disabling the installed record. Bans, allowlist denials and
+raised vetting errors likewise leave the record intact and can recover on a later
+boot. A failed signature-disable write is logged and cannot start the app or abort
+other apps.
+
 ## 1. App MCP servers land in Kiro Crew's agent config, never the shared kiro file
 
 An app's `mcpServers` are written into Kiro Crew's own agent config
@@ -2277,9 +2301,9 @@ behind it.
 **Compatibility rule: every value the old bare `int()` accepted still installs,
 and parses to the same `int`.** `SetupConfig.from_dict` keeps `int(raw)` unclamped
 (an int, a numeric string such as `"60"`, a float truncated, `int(True)` = 1),
-because `setup` is part of `AppManifest.signing_payload`: clamping there would
-change the signed bytes of a manifest published with, say, `600`, and its
-signature would stop verifying. Only a value `int()` raised on (a non-numeric
+so the installed record keeps what the publisher wrote (the signature covers the
+document as written either way) and a manifest published with, say, `600` still
+installs. Only a value `int()` raised on (a non-numeric
 string, `null`, a list or object, NaN or infinity), which already made the install
 fail, is recorded by `SetupConfig.from_dict` and refused with an error naming the
 field: by `AppManifest.validate` on install and update, by the registry
@@ -7562,8 +7586,8 @@ widening, and no path outside the app's data directory.
 control character or lone surrogate (a filesystem call cannot encode one, so it would
 raise in the alias pass), and no segment that starts or ends with a space or ends with a dot
 (Windows drops both, so `a.` would name `a`). At most 32 entries. `AppManifest.validate`
-refuses a manifest with a bad entry, `signing_payload` covers a non-empty declaration
-(sorted; absent when empty, so an older signature still verifies), and `to_dict` and the
+refuses a manifest with a bad entry, the signature covers the declaration as written
+(`signing_payload` signs the whole document), and `to_dict` and the
 built-in snapshot (`discovery._manifest_to_builtin_dict`) keep it.
 
 **Where it is read.** Per spawn, cached on each manifest's device, inode, size and mtime:
