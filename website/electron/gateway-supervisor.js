@@ -358,7 +358,15 @@ function createGatewaySupervisor({
    * on retrying behind that dialog, so Retry works once the crew is back.
    */
   async function ensureManagedTunnel() {
-    if (!tunnelKeeper.start()) return;
+    if (!tunnelKeeper.start()) {
+      // A client-only crew that did not opt in still needs a forward when
+      // nothing else carries its port (tunnel-keeper.js startForUnansweredPort).
+      if (runLocalGateway || !getRemoteHostConfig(store, PORT)?.host) return;
+      try { await checkBackend(); return; }
+      catch { /* nothing answers the port */ }
+      if (!tunnelKeeper.startForUnansweredPort()) return;
+      glog(`tunnel: nothing answers :${PORT}; keeping a forward to the crew for this launch`);
+    }
     sendStatus("Opening the tunnel to your crew…");
     // Counted in polls rather than read off the clock, so the injected timer
     // fully decides how long this waits.
@@ -1536,7 +1544,7 @@ function createGatewaySupervisor({
           continue;
         }
         if (action === "configure-remote") {
-          let draft = remoteCrewDraft(getRemoteHostConfig(store, PORT) || {});
+          let draft = remoteCrewDraft(getRemoteHostConfig(store, PORT) || {}, { tunnelByDefault: !IS_WIN });
           let configured = false;
           for (;;) {
             const fields = await promptRemoteCrew(window, PORT, draft);

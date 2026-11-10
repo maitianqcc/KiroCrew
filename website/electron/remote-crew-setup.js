@@ -43,16 +43,24 @@ function remoteCrewAction({ localGatewayOff = false, remoteHost = "" } = {}) {
  * refused, otherwise what the store holds for this port. A refused save writes
  * nothing, so the store cannot supply them.
  *
+ * A source that never stated a tunnel choice (a crew being added, or one an
+ * older version saved before the option existed) opens on `tunnelByDefault`.
+ * With the local gateway off nothing else opens a forward to the crew, so a
+ * form that opens unticked saves a crew this app can never reach.
+ *
  * @param {{host?: unknown, binPath?: unknown, remotePort?: unknown, remotePath?: unknown, manageTunnel?: unknown}} source
+ * @param {{tunnelByDefault?: boolean}} [options]
  * @returns {{host: string, binPath: string, remotePort: string, remotePath: string, manageTunnel: boolean}}
  */
-function remoteCrewDraft(source = {}) {
+function remoteCrewDraft(source = {}, { tunnelByDefault = false } = {}) {
   return {
     host: String(source.host || ""),
     binPath: String(source.binPath || ""),
     remotePort: String(source.remotePort || ""),
     remotePath: String(source.remotePath || ""),
-    manageTunnel: source.manageTunnel === true,
+    manageTunnel: typeof source.manageTunnel === "boolean"
+      ? source.manageTunnel
+      : tunnelByDefault === true,
   };
 }
 

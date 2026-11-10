@@ -285,6 +285,32 @@ test("remoteCrewDraft normalizes whatever the form reopens on", () => {
   );
 });
 
+test("remoteCrewDraft opens on the tunnel default only where no choice was stated", () => {
+  const on = { tunnelByDefault: true };
+  assert.strictEqual(remoteCrewDraft({}, on).manageTunnel, true, "a crew being added");
+  assert.strictEqual(
+    remoteCrewDraft({ host: "myhost", binPath: "kirocrew" }, on).manageTunnel,
+    true,
+    "a crew saved before the option existed",
+  );
+  assert.strictEqual(
+    remoteCrewDraft({ host: "myhost", manageTunnel: false }, on).manageTunnel,
+    false,
+    "a stated opt-out is kept",
+  );
+  assert.strictEqual(remoteCrewDraft({ manageTunnel: true }).manageTunnel, true);
+});
+
+test("the error dialog's Add Remote Crew form opens with the tunnel ticked", async () => {
+  const { supervisor, hostWindow, loaded } = captureDialogHtml(
+    { runLocalGateway: false },
+    ["mc-action:configure-remote", null, "mc-action:quit"],
+  );
+  await supervisor.start();
+  await supervisor.connect(hostWindow);
+  assert.match(loaded[1], /id="mt" checked/, "a new crew must not be saved without its forward");
+});
+
 // The dialog's markup is the product here, so these drive the REAL dialog
 // through the supervisor with a fake BrowserWindow and read what it loaded.
 // A structural assertion cannot tell a button that is built from one that is
@@ -293,6 +319,7 @@ function captureDialogHtml(storeData, actions = ["mc-action:quit"]) {
   const loaded = [];
   const queue = [...actions];
   const messageBoxes = [];
+  const tunnels = [];
   const BrowserWindowFake = class {
     constructor(options) {
       this.options = options;
@@ -380,7 +407,22 @@ function captureDialogHtml(storeData, actions = ["mc-action:quit"]) {
         return request;
       },
     },
-    spawnFn() { throw new Error("spawn must not run: the local gateway is off"); },
+    // A stored crew nothing answers gets the app's own forward (tunnel-keeper.js);
+    // that keeper is the only child this client-only harness may start.
+    spawnFn(_bin, args) {
+      if (!Array.isArray(args) || args[0] !== "desktop") {
+        throw new Error("spawn must not run: the local gateway is off");
+      }
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.stdin = Object.assign(new EventEmitter(), { end() {}, write() {} });
+      child.kill = () => {};
+      tunnels.push(args);
+      return child;
+    },
+    // The forward never answers here, so its readiness polls end at once.
+    setTimeoutFn: (fn, ms) => (ms === 500 ? setImmediate(fn) : setTimeout(fn, ms)),
     execFileFn() { throw new Error("execFile must not run in this harness"); },
     execFileSyncFn() { throw new Error("execFileSync must not run in this harness"); },
     processRef: {
@@ -393,7 +435,7 @@ function captureDialogHtml(storeData, actions = ["mc-action:quit"]) {
     dirname: "/virtual/electron",
   });
 
-  return { supervisor, hostWindow, loaded, messageBoxes, store };
+  return { supervisor, hostWindow, loaded, messageBoxes, store, tunnels };
 }
 
 async function dialogHtmlFor(storeData) {
@@ -577,6 +619,13 @@ test("Set Remote Host offers the tunnel option on the launch port and applies it
   assert.match(forms[0], /id="mt"/, "the launch port's form must offer the off switch");
   assert.strictEqual(store.data.remoteHosts["5476"].manageTunnel, false);
   assert.strictEqual(syncs.length, 1, "a save must re-apply the tunnel choice without a relaunch");
+});
+
+test("Set Remote Host opens with the tunnel ticked for a crew being added", async () => {
+  const { lifecycle, forms } = lifecycleHarness("5476", null);
+  await lifecycle.promptRemoteHost();
+  await settle();
+  assert.match(forms[0], /id="mt" style="width:auto" checked/);
 });
 
 test("Set Remote Host leaves the option out for other tabs and on Windows", async () => {

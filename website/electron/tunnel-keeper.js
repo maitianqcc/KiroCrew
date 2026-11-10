@@ -89,6 +89,9 @@ function createTunnelKeeper({
   let activeKey = "";
   let respawnTimer = null;
   let wanted = false;
+  // Set when this launch found nothing carrying the port of a crew that did not
+  // opt in (see startForUnansweredPort); cleared by stop().
+  let unanswered = false;
   // Pane ports per asking window, the ports the current keeper was asked to
   // hold, what it last reported for each, and the requests waiting on one.
   const paneOwners = new Map();
@@ -96,11 +99,15 @@ function createTunnelKeeper({
   let paneState = new Map();
   const paneWaiters = new Map();
 
-  /** The crew's coordinates when this port opted into a managed tunnel, else null. */
+  /**
+   * The crew's coordinates when this port opted into a managed tunnel, or
+   * nothing else carries it this launch, else null.
+   */
   function managedTarget() {
     if (isWindows) return null;
     const config = getRemoteHostConfig(store, port);
-    if (!config || !config.host || config.manageTunnel !== true) return null;
+    if (!config || !config.host) return null;
+    if (config.manageTunnel !== true && !unanswered) return null;
     const error = validateRemoteSettings(
       config.host,
       config.binPath,
@@ -311,9 +318,27 @@ function createTunnelKeeper({
     try { proc.kill("SIGTERM"); } catch { /* already gone */ }
   }
 
+  /**
+   * Keep the forward for this launch although the crew did not opt in. Called
+   * only once a probe found nothing answering the port, so no VPN, kubectl or
+   * ssh forward of the user's own is carrying it and none is taken over. A
+   * client-only crew saved with the option unticked would otherwise reach
+   * nothing on every launch; this keeps it reachable with no change to what is
+   * stored. Lasts until stop(), so a wake or an edit keeps it.
+   *
+   * @returns {boolean} whether a forward is now kept.
+   */
+  function startForUnansweredPort() {
+    unanswered = true;
+    if (start()) return true;
+    unanswered = false;
+    return false;
+  }
+
   /** Stop the keeper and its forwards; nothing respawns until start() again. */
   function stop() {
     wanted = false;
+    unanswered = false;
     if (respawnTimer) {
       clearTimeoutFn(respawnTimer);
       respawnTimer = null;
@@ -340,7 +365,7 @@ function createTunnelKeeper({
     start();
   }
 
-  return { start, stop, restart, forwardPanePorts, releasePaneForwards };
+  return { start, startForUnansweredPort, stop, restart, forwardPanePorts, releasePaneForwards };
 }
 
 module.exports = { createTunnelKeeper, RESPAWN_DELAY_MS, PANE_FORWARD_WAIT_MS, MAX_PANE_PORTS };
