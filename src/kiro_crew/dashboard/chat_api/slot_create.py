@@ -1233,6 +1233,11 @@ async def api_chat_slot_create(request: web.Request) -> web.Response:
         created["headroom"] = headroom
     if work_item is not None:
         created["work_item_id"] = work_item.item_id
+        if work_item.trust:
+            # Armed only once the create stands, so a retracted worker never holds it.
+            from kiro_crew.dashboard.handlers.remote_work_item import grant_remote_trust
+
+            created["work_item_trust"] = await grant_remote_trust(state, slot, work_item)
     return web.json_response(created)
 
 
