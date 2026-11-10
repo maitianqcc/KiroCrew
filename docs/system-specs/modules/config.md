@@ -488,7 +488,11 @@ Each session/task gets an isolated subdirectory under this root via `_session_wo
 
 `workspace_root()` creates the selected root on first call and realpath-normalizes
 it before session subdirectories are derived; `workspace_root(create=False)`
-resolves it without creating it (the doctor's census uses that).
+resolves it without creating it (the doctor's census and the MCP gateway daemon's
+backend cwd use that). Both modes name the same root: a saved root that a creating
+call would fall back from (a component on its chain exists but is not a directory,
+such as a file or a dangling link) is skipped by `create=False` too, so it never
+names a root the gateway did not use.
 
 ## Project Directory Resolution
 

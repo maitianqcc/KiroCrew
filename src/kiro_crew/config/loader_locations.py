@@ -133,7 +133,18 @@ def workspace_root(*, create: bool = True) -> Path:
     saved = _read_saved_workspace_dir(_workspace_dir_file())
     if saved:
         try:
-            return _resolve_workspace_root(normalize_workspace_path(saved), create=create)
+            saved_root = normalize_workspace_path(saved)
+            # ``create=False`` never calls ``mkdir``, so it would not hit the error
+            # below on a blocked chain. Skip a saved root a creating call would
+            # fall back from, so both modes name the same root: the daemon spawns
+            # backends in the directory the rewrite wrote into every stub.
+            if (
+                not create
+                and saved_root.is_absolute()
+                and _first_non_directory_on_path(saved_root) is not None
+            ):
+                raise NotADirectoryError(errno.ENOTDIR, "saved workspace root is blocked")
+            return _resolve_workspace_root(saved_root, create=create)
         except OSError:
             # A saved root that cannot be resolved or created (a component is a
             # file, a permission refusal) falls back to the default, so a bad

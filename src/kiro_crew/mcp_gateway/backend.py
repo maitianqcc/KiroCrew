@@ -542,6 +542,23 @@ class Backend:
     _parse_ui_contents = _backend_mcp_apps._parse_ui_contents
 
 
+def _default_work_dir() -> Optional[Path]:
+    """The gateway's default work dir, ``workspace_root()/_default``, or ``None``.
+
+    The one ``--work-dir`` the rewriter writes into every stub, and the one cwd the
+    daemon spawns a backend in (``daemon.launch.env_target_resolver``) and is willing
+    to recreate (``_restore_default_work_dir``). ``None`` when the workspace root
+    cannot be resolved. The root is not created.
+    """
+    # Deferred: ``config.loader`` imports the rewriter's path helpers.
+    from kiro_crew.config.loader_locations import workspace_root
+
+    try:
+        return workspace_root(create=False) / "_default"
+    except (OSError, ValueError):
+        return None
+
+
 def _restore_default_work_dir(work_dir: str, server_name: str) -> None:
     """Recreate the gateway's default work dir when it is *work_dir* and has vanished.
 
@@ -558,12 +575,8 @@ def _restore_default_work_dir(work_dir: str, server_name: str) -> None:
     """
     if os.path.isdir(work_dir):
         return
-    # Deferred: ``config.loader`` imports the rewriter's path helpers.
-    from kiro_crew.config.loader_locations import workspace_root
-
-    try:
-        default = workspace_root(create=False) / "_default"
-    except (OSError, ValueError):
+    default = _default_work_dir()
+    if default is None:
         return
     if os.path.normcase(str(default)) != os.path.normcase(work_dir):
         return
