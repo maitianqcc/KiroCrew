@@ -128,7 +128,7 @@ LOCK_FILENAME = "gateway.lock"
 #: serving; there is nothing for a second gateway to do here.
 #: ``service/linux.py`` feeds this value into the unit's
 #: ``RestartPreventExitStatus`` so a ``Restart=always`` unit goes ``failed``
-#: once, with the refusal line in the journal, instead of relaunching every
+#: once, with the refusal in the journal, instead of relaunching every
 #: ``RestartSec`` against a home that is already served. Every other refusal
 #: keeps exit 1 and IS relaunched, because a later attempt can find it cleared
 #: or because the evidence for standing down is not there: a lock file
@@ -956,7 +956,9 @@ class GatewayLock:
         socket bound) or one bound to another address, and a terminal exit
         there would park a supervised unit ``failed`` for good while a wedged
         incumbent dies on its own or is killed, leaving the home unserved with
-        nothing left to relaunch.
+        nothing left to relaunch. The serving shape leads with where that
+        gateway answered and how to sign in to it: whoever starts a second
+        gateway on a served home has usually lost the tab or the URL.
         """
         facts: list[str] = []
         threads = platform_compat.process_thread_count(pid)
@@ -965,7 +967,23 @@ class GatewayLock:
         facts.extend(self._port_facts(pid, verdict))
         detail = f" ({', '.join(facts)})" if facts else ""
         clause = self._unasserted_clause(verdict)
-        if clause:
+        if verdict.serving:
+            host = verdict.probe_host
+            sign_in = ""
+            if host == _LOOPBACK_PROBE_HOST:
+                # `kirocrew token` dials 127.0.0.1 only, so it is named only here.
+                sign_in = f"Open it with a sign-in link from: kirocrew token --port {self._port}\n"
+            elif ":" in host:
+                host = f"[{host}]"
+            message = (
+                f"Kiro Crew is already running for this home at http://{host}:{self._port} "
+                f"(pid {pid}).\n"
+                + sign_in
+                + "To start a separate one instead: stop it first (kirocrew stop), or set "
+                "KIROCREW_HOME to an isolated directory.\n"
+                f"{self._path} is held by pid {pid}{detail}"
+            )
+        elif clause:
             message = (
                 f"{self._path} is held by pid {pid}{detail} -- it "
                 + clause
