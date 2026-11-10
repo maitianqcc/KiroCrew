@@ -44,3 +44,45 @@ def test_a_command_the_deny_does_not_name_still_asks() -> None:
     _deny_backdoor()
     verdict = _judge(_shell("git status --porcelain"), ["git status.*"])
     assert verdict.action == TOOL_ALLOW
+
+
+# ── an allow-mode ``commands`` policy ─────────────────────────────────────────
+
+
+def _allow_git_status() -> None:
+    _install_governance(
+        {"commands": {"mode": "allow", "allow": ["git status", "git status --porcelain"]}}
+    )
+
+
+def test_an_allow_mode_policy_admits_a_listed_command() -> None:
+    """The title ``Run Command`` is not on the list, and it names no command: the
+    recovered command is what the list is about. The call then prompts as usual."""
+    _allow_git_status()
+    verdict = _judge(_shell("git status --porcelain"), [])
+    assert verdict.action == TOOL_ALLOW
+    assert verdict.tier != "governance"
+
+
+def test_an_allow_mode_policy_lets_a_listed_command_take_its_grant() -> None:
+    _allow_git_status()
+    verdict = _judge(_shell("git status"), ["git status"])
+    assert verdict.action != TOOL_DENY
+
+
+def test_an_allow_mode_policy_still_refuses_an_unlisted_command() -> None:
+    _allow_git_status()
+    verdict = _judge(_shell("ls"), [])
+    assert (verdict.action, verdict.tier) == (TOOL_DENY, "governance")
+
+
+def test_an_allow_mode_policy_refuses_a_chain_with_an_unlisted_part() -> None:
+    _allow_git_status()
+    verdict = _judge(_shell("git status && echo x"), ["git status", "echo .*"])
+    assert (verdict.action, verdict.tier) == (TOOL_DENY, "governance")
+
+
+def test_an_explicit_deny_on_the_title_still_refuses() -> None:
+    _install_governance({"commands": {"mode": "deny", "deny": ["Run Command"]}})
+    verdict = _judge(_shell("git status"), [])
+    assert (verdict.action, verdict.tier) == (TOOL_DENY, "governance")

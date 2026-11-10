@@ -28,7 +28,7 @@ from kiro_crew.platform.governance_parts.archetypes import (
 )
 from kiro_crew.platform.governance_parts.baseline import BASELINE_UNGATED
 from kiro_crew.platform.governance_parts.carriers import GovernanceCeiling, Profile
-from kiro_crew.platform.governance_parts.catalog import _SCOPE_ALIASES
+from kiro_crew.platform.governance_parts.catalog import _SCOPE_ALIASES, COMMANDS_SCOPE
 from kiro_crew.platform.governance_parts.parsing import baseline_controls, with_inner_baseline
 from kiro_crew.platform.governance_parts.tool_calls import (
     _NO_TARGET_ITEM,
@@ -259,6 +259,7 @@ def gate_decision(
     alias_groups: Tuple[Tuple[str, ...], ...] = (),
     deny_aliases: Tuple[str, ...] = (),
     own_scopes: Tuple[str, ...] = (),
+    shell_command: str = "",
 ) -> Decision:
     """Resolve a PreToolUse gate title against the governance ceiling ∩ profile.
 
@@ -326,6 +327,11 @@ def gate_decision(
     the arguments name no target in is asked about :data:`_NO_TARGET_ITEM`, so an
     allow-mode confinement refuses a pathless search or a non-edit write rather
     than never being asked. Empty keeps the old reading.
+
+    ``shell_command`` is a shell call's host-recovered command. When set, it is the
+    call's one ``commands`` item, judged like any other pair, so an allow-mode
+    ``commands`` set admits a listed command; every other ``commands`` pair (the
+    display title, a tool name) may refuse the call only by an explicit deny.
     """
     builtin = "tools" in own_scopes
     if (builtin and not (extra_titles or alias_groups)) or ("mcp" in own_scopes and not mcp_ref):
@@ -421,6 +427,16 @@ def gate_decision(
         for spelling in group
         if spelling
     }
+    if shell_command:
+        # A shell call is judged under ``commands`` on its recovered command. Every
+        # other ``commands`` item (the title, a tool name read as a command body)
+        # names no command, so it may refuse only by an explicit deny.
+        off_scope.extend(p for p in pairs if p[0] == COMMANDS_SCOPE)
+        pairs = [p for p in pairs if p[0] != COMMANDS_SCOPE]
+        for spelling, found in group_pairs.items():
+            off_scope.extend(p for p in found if p[0] == COMMANDS_SCOPE)
+            group_pairs[spelling] = [p for p in found if p[0] != COMMANDS_SCOPE]
+        pairs.append((COMMANDS_SCOPE, shell_command))
     if not pairs and not alias_groups and not deny_aliases and not off_scope:
         return Decision(True, "title not name-gate-governed", rule="default")
     # Off-scope pairs of a proven non-shell call bind by explicit deny only.
